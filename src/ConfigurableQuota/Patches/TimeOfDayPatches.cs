@@ -1,0 +1,208 @@
+using System;
+using HarmonyLib;
+using UnityEngine;
+using Unity.Netcode;
+
+namespace ConfigurableQuota.Patches
+{
+    [HarmonyPatch(typeof(TimeOfDay))]
+    internal static class TimeOfDayQuotaPatch
+    {
+        private const float DAY_SECONDS = 600f;
+
+        [HarmonyPatch(nameof(TimeOfDay.SetNewProfitQuota))]
+        [HarmonyPrefix]
+        [HarmonyPriority(Priority.Low)]
+        [HarmonyAfter(new[] { "Jade.ChocoQuota", "luciusoflegend.lethalcompany.quotaoverhaul" })]
+        private static bool SetNewProfitQuota_Prefix(TimeOfDay __instance,
+            ref int ___timesFulfilledQuota,
+            ref int ___profitQuota,
+            ref float ___timeUntilDeadline,
+            ref int ___quotaFulfilled,
+            ref int ___daysUntilDeadline,
+            ref float ___totalTime,
+            ref QuotaSettings ___quotaVariables)
+        {
+            try
+            {
+                if (!__instance.IsServer) return false;
+
+                if (ConfigManager.DisableQuota.Value)
+                {
+                    ___profitQuota = Mathf.Max(0, ConfigManager.StartingQuota.Value);
+                    SetDeadlineTimer(ref ___daysUntilDeadline, ref ___totalTime, ref ___timeUntilDeadline);
+                    return false;
+                }
+
+                int previousQuota = ___profitQuota;
+                ___timesFulfilledQuota++;
+
+                int newQuota = CalculateNewQuota(previousQuota, ___timesFulfilledQuota);
+
+                int daysLeftAtFulfill = ___daysUntilDeadline;
+                int overage = ___quotaFulfilled - previousQuota;
+                int overtimeBonus = overage / 5 + 15 * daysLeftAtFulfill;
+
+                ___profitQuota = newQuota;
+                ___quotaFulfilled = CalculateRollover(overage);
+
+                SetDeadlineTimer(ref ___daysUntilDeadline, ref ___totalTime, ref ___timeUntilDeadline);
+                __instance.SyncNewProfitQuotaClientRpc(___profitQuota, overtimeBonus, ___timesFulfilledQuota);
+
+                return false;
+            }
+            catch (Exception e)
+            {
+                Plugin.Log.LogError($"Quota SetNewProfitQuota patch error: {e}");
+                return true;
+            }
+        }
+
+        private static int CalculateNewQuota(int previousQuota, int timesFulfilled)
+        {
+            int newQuota;
+            int finalLevel = ConfigManager.FinalLevel.Value;
+
+            if (finalLevel != -1 && previousQuota >= finalLevel)
+            {
+                newQuota = previousQuota + Math.Max(0, ConfigManager.FinalIncrease.Value);
+            }
+            else
+            {
+                float sharp = Mathf.Max(0.1f, ConfigManager.CurveSharpness.Value);
+                float t = timesFulfilled;
+                float timeMult = Mathf.Clamp(1f + t * (t / sharp), 0f, 10000f);
+
+                float randFactor = 1f;
+                float randMult = ConfigManager.RandomizerMultiplier.Value;
+                if (randMult > 0f)
+                {
+                    randFactor = 1f + UnityEngine.Random.Range(-0.5f, 0.5f) * randMult;
+                }
+
+                float increase = ConfigManager.BaseIncrease.Value * timeMult * randFactor;
+
+                if (ConfigManager.EnablePlayerMultiplier.Value)
+                {
+                    increase *= CalculatePlayerMultiplier();
+                }
+
+                newQuota = Mathf.RoundToInt(Mathf.Clamp(previousQuota + increase, 0f, 1E+09f));
+            }
+
+            int cap = ConfigManager.QuotaCap.Value;
+            return cap != -1 ? Mathf.Min(newQuota, cap) : newQuota;
+        }
+
+        private static float CalculatePlayerMultiplier()
+        {
+            var netManager = NetworkManager.Singleton;
+            if (netManager == null || !netManager.IsServer) return 1f;
+
+            int playerCount = Mathf.Max(1, netManager.ConnectedClientsList?.Count ?? 1);
+            int threshold = ConfigManager.PlayerThreshold.Value;
+            int extraPlayers = playerCount - threshold;
+
+            if (extraPlayers <= 0) return 1f;
+
+            int cap = ConfigManager.PlayerCap.Value;
+            int maxExtra = Mathf.Max(0, cap - threshold);
+            extraPlayers = Mathf.Clamp(extraPlayers, 0, maxExtra);
+
+            return 1f + extraPlayers * Mathf.Max(0f, ConfigManager.MultPerPlayer.Value);
+        }
+
+        private static int CalculateRollover(int overage)
+        {
+            float rolloverAmt = ConfigManager.RolloverAmount.Value;
+            if (rolloverAmt <= 0f || overage <= 0) return 0;
+            return Mathf.RoundToInt(overage * Mathf.Clamp01(rolloverAmt));
+        }
+
+        private static void SetDeadlineTimer(ref int days, ref float totalTime, ref float timeUntilDeadline)
+        {
+            days = Math.Max(1, ConfigManager.DaysToDeadline.Value);
+            totalTime = days * DAY_SECONDS;
+            timeUntilDeadline = totalTime;
+        }
+
+        [HarmonyPatch(nameof(TimeOfDay.Awake))]
+        [HarmonyPostfix]
+        private static void TimeOfDay_Awake_Postfix(TimeOfDay __instance)
+        {
+            ApplyQuotaVariables(__instance);
+        }
+
+        [HarmonyPatch(nameof(TimeOfDay.Start))]
+        [HarmonyPostfix]
+        private static void TimeOfDay_Start_Postfix(TimeOfDay __instance)
+        {
+            ApplyQuotaVariables(__instance);
+        }
+
+        private static void ApplyQuotaVariables(TimeOfDay instance)
+        {
+            try
+            {
+                if (instance.quotaVariables != null)
+                {
+                    instance.quotaVariables.startingQuota = ConfigManager.StartingQuota.Value;
+                    instance.quotaVariables.startingCredits = ConfigManager.StartingCredits.Value;
+                    instance.quotaVariables.deadlineDaysAmount = ConfigManager.DaysToDeadline.Value;
+                }
+            }
+            catch (Exception e)
+            {
+                Plugin.Log.LogError($"Failed to apply quota variables: {e}");
+            }
+        }
+
+        [HarmonyPatch(nameof(TimeOfDay.UpdateProfitQuotaCurrentTime))]
+        [HarmonyPostfix]
+        private static void UpdateProfitQuotaCurrentTime_Postfix(TimeOfDay __instance,
+            ref float ___timeUntilDeadline,
+            ref float ___totalTime,
+            ref int ___daysUntilDeadline)
+        {
+            if (ConfigManager.DisableQuota.Value)
+            {
+                ApplyDisableQuotaState(ref ___daysUntilDeadline, ref ___totalTime, ref ___timeUntilDeadline);
+            }
+        }
+
+        [HarmonyPatch(nameof(TimeOfDay.SetBuyingRateForDay))]
+        [HarmonyPostfix]
+        private static void SetBuyingRateForDay_Postfix(TimeOfDay __instance,
+            ref float ___timeUntilDeadline,
+            ref float ___totalTime,
+            ref int ___daysUntilDeadline)
+        {
+            if (ConfigManager.DisableQuota.Value)
+            {
+                ApplyDisableQuotaState(ref ___daysUntilDeadline, ref ___totalTime, ref ___timeUntilDeadline);
+            }
+        }
+
+        private static void ApplyDisableQuotaState(ref int days, ref float totalTime, ref float timeUntilDeadline)
+        {
+            try
+            {
+                SetDeadlineTimer(ref days, ref totalTime, ref timeUntilDeadline);
+
+                var sor = StartOfRound.Instance;
+                if (sor != null)
+                {
+                    sor.companyBuyingRate = 1f;
+                    if (sor.deadlineMonitorText != null)
+                        sor.deadlineMonitorText.text = "DEADLINE:\nNEVER";
+                    if (sor.profitQuotaMonitorText != null)
+                        sor.profitQuotaMonitorText.text = "QUOTA:\nDISABLED";
+                }
+            }
+            catch (Exception e)
+            {
+                Plugin.Log.LogWarning($"DisableQuota state update failed: {e.Message}");
+            }
+        }
+    }
+}
