@@ -41,7 +41,7 @@ namespace ConfigurableQuota.Patches
 
                 int daysLeftAtFulfill = ___daysUntilDeadline;
                 int overage = ___quotaFulfilled - previousQuota;
-                int overtimeBonus = overage / 5 + 15 * daysLeftAtFulfill;
+                int overtimeBonus = (overage / 5) + (15 * daysLeftAtFulfill);
 
                 ___profitQuota = newQuota;
                 ___quotaFulfilled = CalculateRollover(overage);
@@ -76,13 +76,13 @@ namespace ConfigurableQuota.Patches
             {
                 float sharp = Mathf.Max(0.1f, ConfigManager.CurveSharpness.Value);
                 float t = timesFulfilled;
-                float timeMult = Mathf.Clamp(1f + t * (t / sharp), 0f, 10000f);
+                float timeMult = Mathf.Clamp(1f + (t * (t / sharp)), 0f, 10000f);
 
                 float randFactor = 1f;
                 float randMult = ConfigManager.RandomizerMultiplier.Value;
                 if (randMult > 0f)
                 {
-                    randFactor = 1f + UnityEngine.Random.Range(-0.5f, 0.5f) * randMult;
+                    randFactor = 1f + (UnityEngine.Random.Range(-0.5f, 0.5f) * randMult);
                 }
 
                 float increase = ConfigManager.BaseIncrease.Value * timeMult * randFactor;
@@ -125,7 +125,7 @@ namespace ConfigurableQuota.Patches
             int maxExtra = Mathf.Max(0, cap - threshold);
             extraPlayers = Mathf.Clamp(extraPlayers, 0, maxExtra);
 
-            return 1f + extraPlayers * Mathf.Max(0f, ConfigManager.MultPerPlayer.Value);
+            return 1f + (extraPlayers * Mathf.Max(0f, ConfigManager.MultPerPlayer.Value));
         }
 
         private static int CalculateRollover(int overage)

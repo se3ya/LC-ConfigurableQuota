@@ -129,13 +129,12 @@ namespace ConfigurableQuota.Patches
             if (recovered > 0 && dead > 0)
             {
                 float recoveredRatio = Mathf.Clamp01((float)recovered / dead);
-                pct *= Mathf.Clamp01(1f - Mathf.Clamp01(recoveryBonus) * recoveredRatio);
+                pct *= Mathf.Clamp01(1f - (Mathf.Clamp01(recoveryBonus) * recoveredRatio));
             }
 
             if (cap >= 0f) pct = Mathf.Min(pct, Mathf.Clamp01(cap));
             return pct < threshold ? 0f : Mathf.Clamp01(pct);
         }
-
     }
 
     [HarmonyPatch(typeof(RoundManager))]
