@@ -46,8 +46,13 @@ namespace ConfigurableQuota.Patches
                 ___profitQuota = newQuota;
                 ___quotaFulfilled = CalculateRollover(overage);
 
-                SetDeadlineTimer(ref ___daysUntilDeadline, ref ___totalTime, ref ___timeUntilDeadline);
+                int deadline = SetDeadlineTimer(ref ___daysUntilDeadline, ref ___totalTime, ref ___timeUntilDeadline);
                 __instance.SyncNewProfitQuotaClientRpc(___profitQuota, overtimeBonus, ___timesFulfilledQuota);
+
+                if (ConfigManager.RandomizeDeadline.Value)
+                {
+                    NetworkSync.SyncDeadlineToClients(deadline);
+                }
 
                 return false;
             }
@@ -87,6 +92,17 @@ namespace ConfigurableQuota.Patches
                     increase *= CalculatePlayerMultiplier();
                 }
 
+                if (ConfigManager.EnableGrowthDampening.Value)
+                {
+                    int ceiling = ConfigManager.DampeningStartAt.Value;
+                    if (timesFulfilled > ceiling)
+                    {
+                        float excess = timesFulfilled - ceiling;
+                        float scale = Mathf.Max(0.1f, ConfigManager.DampeningSharpness.Value);
+                        increase /= 1f + Mathf.Pow(excess / scale, 2f);
+                    }
+                }
+
                 newQuota = Mathf.RoundToInt(Mathf.Clamp(previousQuota + increase, 0f, 1E+09f));
             }
 
@@ -119,11 +135,23 @@ namespace ConfigurableQuota.Patches
             return Mathf.RoundToInt(overage * Mathf.Clamp01(rolloverAmt));
         }
 
-        private static void SetDeadlineTimer(ref int days, ref float totalTime, ref float timeUntilDeadline)
+        private static int SetDeadlineTimer(ref int days, ref float totalTime, ref float timeUntilDeadline)
         {
-            days = Math.Max(1, ConfigManager.DaysToDeadline.Value);
+            int d;
+            if (ConfigManager.RandomizeDeadline.Value)
+            {
+                int min = Math.Max(1, ConfigManager.DeadlineMin.Value);
+                int max = Math.Max(min, ConfigManager.DeadlineMax.Value);
+                d = UnityEngine.Random.Range(min, max + 1);
+            }
+            else
+            {
+                d = Math.Max(1, ConfigManager.DaysToDeadline.Value);
+            }
+            days = d;
             totalTime = days * DAY_SECONDS;
             timeUntilDeadline = totalTime;
+            return d;
         }
 
         [HarmonyPatch(nameof(TimeOfDay.Awake))]
@@ -148,7 +176,9 @@ namespace ConfigurableQuota.Patches
                 {
                     instance.quotaVariables.startingQuota = ConfigManager.StartingQuota.Value;
                     instance.quotaVariables.startingCredits = ConfigManager.StartingCredits.Value;
-                    instance.quotaVariables.deadlineDaysAmount = ConfigManager.DaysToDeadline.Value;
+                    instance.quotaVariables.deadlineDaysAmount = ConfigManager.RandomizeDeadline.Value
+                        ? Math.Max(1, ConfigManager.DeadlineMin.Value)
+                        : ConfigManager.DaysToDeadline.Value;
                 }
             }
             catch (Exception e)

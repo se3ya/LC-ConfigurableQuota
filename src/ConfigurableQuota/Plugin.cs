@@ -6,7 +6,7 @@ using ConfigurableQuota.Patches;
 namespace ConfigurableQuota
 {
   [BepInPlugin(Metadata.GUID, Metadata.PLUGIN_NAME, Metadata.VERSION)]
-  [BepInDependency("Xilophor.LethalNetworkAPI")]
+  [BepInDependency("LethalNetworkAPI")]
   public class Plugin : BaseUnityPlugin
   {
     private readonly Harmony _harmony = new(Metadata.GUID);

@@ -47,6 +47,14 @@ namespace ConfigurableQuota
         public static ConfigEntry<bool> ValueLossEnabled = null!;
         public static ConfigEntry<float> ValueLossPercent = null!;
 
+        public static ConfigEntry<bool> RandomizeDeadline = null!;
+        public static ConfigEntry<int> DeadlineMin = null!;
+        public static ConfigEntry<int> DeadlineMax = null!;
+
+        public static ConfigEntry<bool> EnableGrowthDampening = null!;
+        public static ConfigEntry<int> DampeningStartAt = null!;
+        public static ConfigEntry<float> DampeningSharpness = null!;
+
         public static ConfigEntry<bool> EquipmentLossEnabled = null!;
         public static ConfigEntry<float> LoseEachEquipmentChance = null!;
         public static ConfigEntry<int> MaxLostEquipmentItems = null!;
@@ -66,7 +74,25 @@ namespace ConfigurableQuota
                 "0. Basic",
                 "DaysToDeadline",
                 3,
-                "Number of days to meet each quota."
+                "Number of days to meet each quota. Ignored when RandomizeDeadline is enabled."
+            );
+            RandomizeDeadline = config.Bind(
+                "0. Basic",
+                "RandomizeDeadline",
+                false,
+                "Randomize the deadline each quota cycle using DeadlineMin/Max instead of a fixed DaysToDeadline."
+            );
+            DeadlineMin = config.Bind(
+                "0. Basic",
+                "DeadlineMin",
+                3,
+                "Minimum days for deadline when RandomizeDeadline is enabled."
+            );
+            DeadlineMax = config.Bind(
+                "0. Basic",
+                "DeadlineMax",
+                4,
+                "Maximum days for deadline when RandomizeDeadline is enabled. Example: Min=3, Max=5 = random 3-5 days each cycle."
             );
 
             StartingQuota = config.Bind(
@@ -112,6 +138,24 @@ namespace ConfigurableQuota
                 "QuotaCap",
                 -1,
                 "Maximum quota value. Quota will never exceed this amount. Set -1 for no limit."
+            );
+            EnableGrowthDampening = config.Bind(
+                "1. Leveling",
+                "EnableGrowthDampening",
+                false,
+                "Gradually reduces quota growth after a number of fulfilled cycles. Growth slows down the longer you play."
+            );
+            DampeningStartAt = config.Bind(
+                "1. Leveling",
+                "DampeningStartAt",
+                6,
+                "Number of quota cycles before dampening begins. Example: 6 = growth starts dampening after the 6th fulfilled quota."
+            );
+            DampeningSharpness = config.Bind(
+                "1. Leveling",
+                "DampeningSharpness",
+                11f,
+                "Controls dampening intensity. Lower values reduce growth more aggressively. Example: 11 = moderate dampening."
             );
 
             EnablePlayerMultiplier = config.Bind(
@@ -276,14 +320,14 @@ namespace ConfigurableQuota
                 "7. Loss.Value",
                 "Enabled",
                 false,
-                "Reduce the sell value of all scrap when all players die. Items remain but are worth less."
+                "Permanently reduce the scrap value of all ship items at end of round when the entire crew is wiped. Reduced values persist to the next day."
             );
             ValueLossPercent = config.Bind(
                 "7. Loss.Value",
                 "Percent",
                 0.2f,
                 new ConfigDescription(
-                    "Percentage to reduce scrap value. Example: 0.25 = all scrap worth 25% less when sold.",
+                    "Percentage to reduce scrap value. Example: 0.25 = all scrap items permanently lose 25% of their value. Stacks multiplicatively on repeated wipes.",
                     new AcceptableValueRange<float>(0f, 1f)
                 )
             );

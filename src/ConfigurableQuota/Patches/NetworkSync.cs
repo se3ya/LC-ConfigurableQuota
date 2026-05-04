@@ -4,42 +4,42 @@ using UnityEngine;
 
 namespace ConfigurableQuota.Patches
 {
-    /// <summary>
-    /// Handles network synchronization of credits and quota penalties between host and clients.
-    /// </summary>
     internal static class NetworkSync
     {
         private static LNetworkMessage<int>? _syncCreditsMessage;
         private static LNetworkMessage<int>? _syncQuotaMessage;
         private static LNetworkMessage<SyncValueLossData>? _syncValueLossMessage;
+        private static LNetworkMessage<int>? _syncDeadlineMessage;
 
         public static void Initialize()
         {
             try
             {
-                // Credits sync: Host -> All Clients
                 _syncCreditsMessage = LNetworkMessage<int>.Connect(
                     "ConfigurableQuota_SyncCredits",
                     onClientReceived: OnCreditsReceived
                 );
 
-                // Quota sync: Host -> All Clients
                 _syncQuotaMessage = LNetworkMessage<int>.Connect(
                     "ConfigurableQuota_SyncQuota",
                     onClientReceived: OnQuotaReceived
                 );
 
-                // Value loss sync: Host -> All Clients
                 _syncValueLossMessage = LNetworkMessage<SyncValueLossData>.Connect(
                     "ConfigurableQuota_SyncValueLoss",
                     onClientReceived: OnValueLossReceived
                 );
 
-                Plugin.Log.LogInfo("[NetworkSync] Network messages initialized");
+                _syncDeadlineMessage = LNetworkMessage<int>.Connect(
+                    "ConfigurableQuota_SyncDeadline",
+                    onClientReceived: OnDeadlineReceived
+                );
+
+                Plugin.Log.LogInfo("Network initialized");
             }
             catch (Exception ex)
             {
-                Plugin.Log.LogError($"[NetworkSync] Failed to initialize: {ex.Message}");
+                Plugin.Log.LogError($"Failed to initialize: {ex.Message}");
             }
         }
 
@@ -51,16 +51,16 @@ namespace ConfigurableQuota.Patches
             {
                 if (_syncCreditsMessage == null)
                 {
-                    Plugin.Log.LogWarning("[NetworkSync] Credits message not initialized");
+                    Plugin.Log.LogWarning("Credits message not initialized");
                     return;
                 }
 
                 _syncCreditsMessage.SendClients(credits);
-                Plugin.Log.LogInfo($"[NetworkSync] Sent credits sync to clients: {credits}");
+                Plugin.Log.LogDebug($"Sent credits sync to clients: {credits}");
             }
             catch (Exception ex)
             {
-                Plugin.Log.LogError($"[NetworkSync] Failed to sync credits: {ex.Message}");
+                Plugin.Log.LogError($"Failed to sync credits: {ex.Message}");
             }
         }
 
@@ -71,7 +71,6 @@ namespace ConfigurableQuota.Patches
                 var sor = StartOfRound.Instance;
                 if (sor == null) return;
 
-                // Update StartOfRound credits
                 var field = typeof(StartOfRound).GetField("groupCredits", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic)
                            ?? typeof(StartOfRound).GetField("companyCredits", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic);
                 if (field?.FieldType == typeof(int))
@@ -79,7 +78,6 @@ namespace ConfigurableQuota.Patches
                     field.SetValue(sor, credits);
                 }
 
-                // Update Terminal credits
                 var term = UnityEngine.Object.FindObjectOfType<Terminal>();
                 if (term != null)
                 {
@@ -91,11 +89,11 @@ namespace ConfigurableQuota.Patches
                     }
                 }
 
-                Plugin.Log.LogInfo($"[NetworkSync] Client received credits sync: {credits}");
+                Plugin.Log.LogDebug($"Client received credits sync: {credits}");
             }
             catch (Exception ex)
             {
-                Plugin.Log.LogError($"[NetworkSync] Failed to apply credits on client: {ex.Message}");
+                Plugin.Log.LogError($"Failed to apply credits on client: {ex.Message}");
             }
         }
 
@@ -109,16 +107,16 @@ namespace ConfigurableQuota.Patches
             {
                 if (_syncQuotaMessage == null)
                 {
-                    Plugin.Log.LogWarning("[NetworkSync] Quota message not initialized");
+                    Plugin.Log.LogWarning("Quota message not initialized");
                     return;
                 }
 
                 _syncQuotaMessage.SendClients(quota);
-                Plugin.Log.LogInfo($"[NetworkSync] Sent quota sync to clients: {quota}");
+                Plugin.Log.LogDebug($"Sent quota sync to clients: {quota}");
             }
             catch (Exception ex)
             {
-                Plugin.Log.LogError($"[NetworkSync] Failed to sync quota: {ex.Message}");
+                Plugin.Log.LogError($"Failed to sync quota: {ex.Message}");
             }
         }
 
@@ -130,12 +128,12 @@ namespace ConfigurableQuota.Patches
                 if (tod != null)
                 {
                     tod.profitQuota = quota;
-                    Plugin.Log.LogInfo($"[NetworkSync] Client received quota sync: {quota}");
+                    Plugin.Log.LogDebug($"Client received quota sync: {quota}");
                 }
             }
             catch (Exception ex)
             {
-                Plugin.Log.LogError($"[NetworkSync] Failed to apply quota on client: {ex.Message}");
+                Plugin.Log.LogError($"Failed to apply quota on client: {ex.Message}");
             }
         }
 
@@ -149,21 +147,20 @@ namespace ConfigurableQuota.Patches
             {
                 if (_syncValueLossMessage == null)
                 {
-                    Plugin.Log.LogWarning("[NetworkSync] Value loss message not initialized");
+                    Plugin.Log.LogWarning("Value loss message not initialized");
                     return;
                 }
 
-                // Send each item individually to avoid large packet issues
                 foreach (var item in items)
                 {
                     _syncValueLossMessage.SendClients(item);
                 }
 
-                Plugin.Log.LogInfo($"[NetworkSync] Sent {items.Length} value loss updates to clients");
+                Plugin.Log.LogDebug($"Sent {items.Length} value loss updates to clients");
             }
             catch (Exception ex)
             {
-                Plugin.Log.LogError($"[NetworkSync] Failed to sync value loss: {ex.Message}");
+                Plugin.Log.LogError($"Failed to sync value loss: {ex.Message}");
             }
         }
 
@@ -180,7 +177,7 @@ namespace ConfigurableQuota.Patches
                         {
                             g.scrapValue = data.NewValue;
                             try { g.SetScrapValue(data.NewValue); } catch { }
-                            Plugin.Log.LogInfo($"[NetworkSync] Client updated scrap value for {g.itemProperties.itemName}: {data.NewValue}");
+                            Plugin.Log.LogDebug($"Client updated scrap value for {g.itemProperties.itemName}: {data.NewValue}");
                             break;
                         }
                     }
@@ -189,16 +186,61 @@ namespace ConfigurableQuota.Patches
             }
             catch (Exception ex)
             {
-                Plugin.Log.LogError($"[NetworkSync] Failed to apply value loss on client: {ex.Message}");
+                Plugin.Log.LogError($"Failed to apply value loss on client: {ex.Message}");
+            }
+        }
+
+        #endregion
+
+        #region Deadline Sync
+
+        public static void SyncDeadlineToClients(int days)
+        {
+            try
+            {
+                if (_syncDeadlineMessage == null)
+                {
+                    Plugin.Log.LogWarning("Deadline message not initialized");
+                    return;
+                }
+
+                _syncDeadlineMessage.SendClients(days);
+                Plugin.Log.LogDebug($"Sent deadline sync to clients: {days} days");
+            }
+            catch (Exception ex)
+            {
+                Plugin.Log.LogError($"Failed to sync deadline: {ex.Message}");
+            }
+        }
+
+        private static void OnDeadlineReceived(int days)
+        {
+            try
+            {
+                var tod = TimeOfDay.Instance;
+                if (tod == null) return;
+
+                if (tod.quotaVariables != null)
+                    tod.quotaVariables.deadlineDaysAmount = days;
+
+                float totalTime = days * 600f;
+                var type = typeof(TimeOfDay);
+                var flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic;
+                type.GetField("daysUntilDeadline", flags)?.SetValue(tod, days);
+                type.GetField("totalTime", flags)?.SetValue(tod, totalTime);
+                type.GetField("timeUntilDeadline", flags)?.SetValue(tod, totalTime);
+
+                Plugin.Log.LogDebug($"Client updated deadline: {days} days");
+            }
+            catch (Exception ex)
+            {
+                Plugin.Log.LogError($"Failed to apply deadline on client: {ex.Message}");
             }
         }
 
         #endregion
     }
 
-    /// <summary>
-    /// Data structure for syncing individual scrap value losses.
-    /// </summary>
     [Serializable]
     public struct SyncValueLossData
     {

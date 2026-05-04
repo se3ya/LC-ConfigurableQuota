@@ -11,8 +11,6 @@ namespace ConfigurableQuota.Patches
     internal static class PenaltyHelpers
     {
         private static FieldInfo? _allPlayersField;
-        private static FieldInfo? _creditsField;
-        private static FieldInfo? _terminalCreditsField;
 
         public static bool IsServerSafe => NetworkManager.Singleton != null && NetworkManager.Singleton.IsServer;
 
@@ -138,45 +136,6 @@ namespace ConfigurableQuota.Patches
             return pct < threshold ? 0f : Mathf.Clamp01(pct);
         }
 
-        public static bool TryApplyCreditPenalty(float penaltyPercent, int dead, int total, int recovered)
-        {
-            var sor = StartOfRound.Instance;
-            if (sor == null) return false;
-
-            if (_creditsField == null)
-            {
-                var t = typeof(StartOfRound);
-                _creditsField = t.GetField("groupCredits", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
-                                 ?? t.GetField("companyCredits", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-            }
-            if (_creditsField == null || _creditsField.FieldType != typeof(int)) return false;
-
-            int current = (int)_creditsField.GetValue(sor);
-            int loss = Mathf.RoundToInt(current * penaltyPercent);
-            int newVal = Mathf.Max(0, current - loss);
-
-            // set terminal credits for consistency
-            try
-            {
-                var term = UnityEngine.Object.FindObjectOfType<Terminal>();
-                if (term != null)
-                {
-                    _terminalCreditsField ??= typeof(Terminal).GetField("groupCredits", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
-                                              ?? typeof(Terminal).GetField("companyCredits", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-                    if (_terminalCreditsField != null && _terminalCreditsField.FieldType == typeof(int))
-                    {
-                        _terminalCreditsField.SetValue(term, newVal);
-                    }
-                }
-            }
-            catch { }
-
-            _creditsField.SetValue(sor, newVal);
-
-            Plugin.Log.LogInfo($"[Penalties] Credits before: {current}, loss: {loss} ({penaltyPercent:P0}), after: {newVal}. Deaths {dead}/{total}, recovered {recovered}.");
-
-            return true;
-        }
     }
 
     [HarmonyPatch(typeof(RoundManager))]
@@ -197,15 +156,10 @@ namespace ConfigurableQuota.Patches
                 bool atCompany = PenaltyHelpers.IsOnGordion();
                 var (dead, total, recovered) = PenaltyHelpers.CountDeathsAndRecovered();
 
-                Plugin.Log.LogInfo($"[Penalties] DespawnPropsAtEndOfRound: despawnAll={despawnAllItems}, deaths={dead}/{total}, recovered={recovered}, atCompany={atCompany}");
-
-                // Intercept only when: selling at moon (not end-game), entire crew died, and not at Company
                 if (!despawnAllItems && !atCompany && dead >= total && !_lossesAppliedThisRound)
                 {
-                    // First, despawn all non-ship items (facility scrap)
                     DespawnFacilityItems();
 
-                    // Then apply losses to ship items
                     ApplyLossesWhenAllDead();
                     _lossesAppliedThisRound = true;
 
@@ -218,16 +172,16 @@ namespace ConfigurableQuota.Patches
                         ApplyQuotaPenalty(dead, total, recovered);
                     }
 
-                    _appliedThisRound = true; // Prevent postfix from applying penalties again
-                    Plugin.Log.LogInfo("[Penalties] Bypassed vanilla despawn to preserve kept items");
-                    return false; // skip vanilla
+                    _appliedThisRound = true;
+                    Plugin.Log.LogDebug("Bypassed vanilla despawn to preserve kept items");
+                    return false;
                 }
 
                 return true;
             }
             catch (Exception e)
             {
-                Plugin.Log.LogWarning($"[Penalties] Error in despawn prefix: {e.Message}");
+                Plugin.Log.LogWarning($"Error in despawn prefix: {e.Message}");
                 return true;
             }
         }
@@ -261,7 +215,7 @@ namespace ConfigurableQuota.Patches
             }
             catch (Exception e)
             {
-                Plugin.Log.LogWarning($"[Penalties] Error in despawn postfix: {e.Message}");
+                Plugin.Log.LogWarning($"Error in despawn postfix: {e.Message}");
             }
         }
 
@@ -283,21 +237,15 @@ namespace ConfigurableQuota.Patches
                     ConfigManager.CreditPenaltyRecoveryBonus.Value,
                     dead, total, recovered);
 
-                if (pct <= 0f)
-                {
-                    Plugin.Log.LogInfo("[Penalties] Credit penalty below threshold, not scheduling");
-                    return;
-                }
+                if (pct <= 0f) return;
 
                 int desiredFinal = Mathf.Max(0, currentCredits - Mathf.RoundToInt(currentCredits * pct));
-                Plugin.Log.LogInfo($"[Penalties] Scheduling credit penalty: {pct:P0}, snapshot={currentCredits}, desiredFinal={desiredFinal}");
-
                 _creditScheduled = true;
                 sor.StartCoroutine(FinalizeCreditPenaltyAfterDelay(currentCredits, desiredFinal));
             }
             catch (Exception ex)
             {
-                Plugin.Log.LogWarning($"[Penalties] Failed to schedule credit penalty: {ex.Message}");
+                Plugin.Log.LogWarning($"Failed to schedule credit penalty: {ex.Message}");
             }
         }
 
@@ -341,13 +289,9 @@ namespace ConfigurableQuota.Patches
                 var sor = StartOfRound.Instance;
                 if (sor == null) yield break;
 
-                int current = GetCurrentCredits();
                 SetCredits(desiredFinal);
-
-                // Sync to all clients
                 NetworkSync.SyncCreditsToClients(desiredFinal);
-
-                Plugin.Log.LogInfo($"[Penalties] Credit penalty finalized: vanillaAfter={current} -> final={desiredFinal}");
+                Plugin.Log.LogInfo($"Credits penalized → {desiredFinal}");
             }
             finally
             {
@@ -407,10 +351,9 @@ namespace ConfigurableQuota.Patches
                 int newQuota = Mathf.Max(1, tod.profitQuota + delta);
                 tod.profitQuota = newQuota;
 
-                // Sync to all clients
                 NetworkSync.SyncQuotaToClients(newQuota);
 
-                Plugin.Log.LogInfo($"[Penalties] Quota penalty: +{delta} ({pct:P0}), new quota: {newQuota}");
+                Plugin.Log.LogInfo($"Quota penalized +{delta} ({pct:P0}), new: {newQuota}");
             }
         }
 
@@ -429,7 +372,6 @@ namespace ConfigurableQuota.Patches
                 {
                     try
                     {
-                        // Despawn items that are NOT in the ship
                         if (!IsShipItem(g, shipRoot))
                         {
                             DespawnObject(g);
@@ -439,7 +381,7 @@ namespace ConfigurableQuota.Patches
                     catch { }
                 }
 
-                Plugin.Log.LogInfo($"[Losses] Despawned {despawnedCount} facility items");
+                Plugin.Log.LogDebug($"Despawned {despawnedCount} facility items");
             }
             catch (Exception ex)
             {
@@ -461,21 +403,18 @@ namespace ConfigurableQuota.Patches
                 var shipScrap = shipItems.Where(g => g.itemProperties.isScrap).ToArray();
                 var shipEquip = shipItems.Where(g => !g.itemProperties.isScrap && !IsBodyOrBlacklisted(g)).ToArray();
 
-                Plugin.Log.LogInfo($"[Losses] Found {shipScrap.Length} scrap, {shipEquip.Length} equipment in ship ({allGrab.Length} total objects)");
+                Plugin.Log.LogDebug($"Ship items: {shipScrap.Length} scrap, {shipEquip.Length} equipment");
 
-                // Apply value loss FIRST before any removal
                 if (ConfigManager.ValueLossEnabled.Value && shipScrap.Length > 0)
                 {
                     ApplyValueLoss(shipScrap);
                 }
 
-                // Then apply scrap removal
                 if (ConfigManager.ScrapLossEnabled.Value && shipScrap.Length > 0)
                 {
                     SelectAndRemoveScrap(shipScrap);
                 }
 
-                // Then apply equipment removal
                 if (ConfigManager.EquipmentLossEnabled.Value && shipEquip.Length > 0)
                 {
                     SelectAndRemoveEquipment(shipEquip);
@@ -534,7 +473,6 @@ namespace ConfigurableQuota.Patches
             int eligible = 0;
             int removedCount = 0;
             List<string> removedNames = new();
-            List<string> keptNames = new();
 
             foreach (var g in scrapItems)
             {
@@ -544,17 +482,9 @@ namespace ConfigurableQuota.Patches
 
                     eligible++;
 
-                    if (maxRemove > 0 && removedCount >= maxRemove)
-                    {
-                        keptNames.Add($"CAP:{g.itemProperties.itemName}");
-                        continue;
-                    }
+                    if (maxRemove > 0 && removedCount >= maxRemove) continue;
 
-                    if (UnityEngine.Random.value < safeChance)
-                    {
-                        keptNames.Add($"SAFE:{g.itemProperties.itemName}");
-                        continue;
-                    }
+                    if (UnityEngine.Random.value < safeChance) continue;
 
                     if (UnityEngine.Random.value < loseChance)
                     {
@@ -562,18 +492,11 @@ namespace ConfigurableQuota.Patches
                         removedCount++;
                         removedNames.Add(g.itemProperties.itemName);
                     }
-                    else
-                    {
-                        keptNames.Add($"ROLL:{g.itemProperties.itemName}");
-                    }
                 }
                 catch { }
             }
 
-            if (removedCount > 0)
-                Plugin.Log.LogInfo($"[Losses] Scrap loss: removed {removedCount}/{eligible} (safe {safeChance:P0}, lose {loseChance:P0}). Removed: {string.Join(", ", removedNames)}; Kept: {string.Join(", ", keptNames)}");
-            else
-                Plugin.Log.LogInfo($"[Losses] Scrap loss: none removed from {eligible} eligible (safe {safeChance:P0}, lose {loseChance:P0}). Kept: {string.Join(", ", keptNames)}");
+            Plugin.Log.LogDebug($"Scrap loss: {removedCount}/{eligible} removed. [{string.Join(", ", removedNames)}]");
         }
 
         private static void SelectAndRemoveEquipment(GrabbableObject[] equipItems)
@@ -584,7 +507,6 @@ namespace ConfigurableQuota.Patches
             int eligible = 0;
             int removedCount = 0;
             List<string> removedNames = new();
-            List<string> keptNames = new();
 
             foreach (var g in equipItems)
             {
@@ -594,11 +516,7 @@ namespace ConfigurableQuota.Patches
 
                     eligible++;
 
-                    if (maxRemove > 0 && removedCount >= maxRemove)
-                    {
-                        keptNames.Add($"CAP:{g.itemProperties.itemName}");
-                        continue;
-                    }
+                    if (maxRemove > 0 && removedCount >= maxRemove) continue;
 
                     if (UnityEngine.Random.value < loseChance)
                     {
@@ -606,18 +524,11 @@ namespace ConfigurableQuota.Patches
                         removedCount++;
                         removedNames.Add(g.itemProperties.itemName);
                     }
-                    else
-                    {
-                        keptNames.Add(g.itemProperties.itemName);
-                    }
                 }
                 catch { }
             }
 
-            if (removedCount > 0)
-                Plugin.Log.LogInfo($"[Losses] Equipment loss: removed {removedCount}/{eligible} (lose {loseChance:P0}). Removed: {string.Join(", ", removedNames)}; Kept: {string.Join(", ", keptNames)}");
-            else
-                Plugin.Log.LogInfo($"[Losses] Equipment loss: none removed from {eligible} eligible (lose {loseChance:P0}). Kept: {string.Join(", ", keptNames)}");
+            Plugin.Log.LogDebug($"Equipment loss: {removedCount}/{eligible} removed. [{string.Join(", ", removedNames)}]");
         }
 
         private static void ApplyValueLoss(GrabbableObject[] scrapItems)
@@ -642,21 +553,17 @@ namespace ConfigurableQuota.Patches
 
                         g.scrapValue = newValue;
 
-                        // Also update SetScrapValue to ensure proper sync
                         try
                         {
                             g.SetScrapValue(newValue);
                         }
                         catch { }
 
-                        // Store for network sync
                         syncData.Add(new SyncValueLossData(g.GetInstanceID(), newValue));
 
                         totalOldValue += oldValue;
                         totalNewValue += newValue;
                         affected++;
-
-                        Plugin.Log.LogInfo($"[Losses] Value loss: {g.itemProperties.itemName} ${oldValue} -> ${newValue}");
                     }
                 }
                 catch (Exception ex)
@@ -665,13 +572,10 @@ namespace ConfigurableQuota.Patches
                 }
             }
 
-            // Sync value changes to all clients
             if (syncData.Count > 0)
-            {
                 NetworkSync.SyncValueLossToClients(syncData.ToArray());
-            }
 
-            Plugin.Log.LogInfo($"[Losses] Value reduced by {pct:P0} on {affected} scrap items (total: ${totalOldValue} -> ${totalNewValue})");
+            Plugin.Log.LogDebug($"Value loss {pct:P0}: {affected} items, ${totalOldValue} → ${totalNewValue}");
         }
 
         private static void DespawnObject(GrabbableObject g)
