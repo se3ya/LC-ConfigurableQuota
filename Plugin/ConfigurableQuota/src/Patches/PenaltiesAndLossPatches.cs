@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Reflection;
 using HarmonyLib;
 using Unity.Netcode;
 using UnityEngine;
@@ -10,47 +9,23 @@ namespace ConfigurableQuota.Patches
 {
     internal static class PenaltyHelpers
     {
-        private static FieldInfo? _allPlayersField;
-
         public static bool IsServerSafe => NetworkManager.Singleton != null && NetworkManager.Singleton.IsServer;
-
-        public static bool TryGetAllPlayers(out Array? players)
-        {
-            players = null;
-            var sor = StartOfRound.Instance;
-            if (sor == null) return false;
-
-            _allPlayersField ??= typeof(StartOfRound).GetField("allPlayerScripts", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-            if (_allPlayersField == null) return false;
-
-            players = _allPlayersField.GetValue(sor) as Array;
-            return players != null;
-        }
 
         public static (int dead, int total, int recovered) CountDeathsAndRecovered()
         {
-            if (!TryGetAllPlayers(out var players))
-                return (0, 0, 0);
+            var sor = StartOfRound.Instance;
+            if (sor == null) return (0, 0, 0);
 
             int dead = 0;
             int total = 0;
             int recovered = 0;
 
-            foreach (var p in players!)
+            foreach (var player in sor.allPlayerScripts)
             {
-                if (p == null) continue;
+                if (player == null) continue;
 
-                bool isControlled = false;
-                try
-                {
-                    var type = p.GetType();
-                    var ctrlField = type.GetField("isPlayerControlled", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-                    if (ctrlField?.FieldType == typeof(bool))
-                        isControlled = (bool)ctrlField.GetValue(p);
-                }
-                catch { }
-
-                bool isDead = IsPlayerDead(p, out var bodyTransform);
+                bool isControlled = player.isPlayerControlled;
+                bool isDead = player.isPlayerDead;
 
                 if (isControlled || isDead)
                 {
@@ -60,6 +35,7 @@ namespace ConfigurableQuota.Patches
                 if (!isDead) continue;
 
                 dead++;
+                Transform? bodyTransform = player.deadBody?.transform;
                 if (bodyTransform != null && IsPositionInsideShip(bodyTransform.position))
                 {
                     recovered++;
@@ -67,24 +43,6 @@ namespace ConfigurableQuota.Patches
             }
 
             return (dead, Math.Max(total, 1), Mathf.Clamp(recovered, 0, dead));
-        }
-
-        private static bool IsPlayerDead(object player, out Transform? bodyTransform)
-        {
-            bodyTransform = null;
-            try
-            {
-                var type = player.GetType();
-                var deadField = type.GetField("isPlayerDead", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-                if (deadField?.FieldType == typeof(bool) && (bool)deadField.GetValue(player))
-                {
-                    var bodyField = type.GetField("deadBody", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-                    bodyTransform = (bodyField?.GetValue(player) as Component)?.transform;
-                    return true;
-                }
-            }
-            catch { }
-            return false;
         }
 
         public static bool IsPositionInsideShip(Vector3 pos)
@@ -101,20 +59,10 @@ namespace ConfigurableQuota.Patches
         {
             try
             {
-                var sor = StartOfRound.Instance;
-                if (sor == null) return false;
-
-                var levelField = typeof(StartOfRound).GetField("currentLevel", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-                var level = levelField?.GetValue(sor);
+                var level = StartOfRound.Instance?.currentLevel;
                 if (level == null) return false;
 
-                var levelType = level.GetType();
-                var nameProp = levelType.GetProperty("name") ?? levelType.GetProperty("levelName") ?? levelType.GetProperty("PlanetName");
-                var nameVal = nameProp?.GetValue(level) as string;
-
-                return !string.IsNullOrEmpty(nameVal) &&
-                       (nameVal.IndexOf("gordion", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                        nameVal.IndexOf("company", StringComparison.OrdinalIgnoreCase) >= 0);
+                return level.sceneName == "CompanyBuilding";
             }
             catch { return false; }
         }
@@ -240,7 +188,7 @@ namespace ConfigurableQuota.Patches
 
                 int desiredFinal = Mathf.Max(0, currentCredits - Mathf.RoundToInt(currentCredits * pct));
                 _creditScheduled = true;
-                sor.StartCoroutine(FinalizeCreditPenaltyAfterDelay(currentCredits, desiredFinal));
+                sor.StartCoroutine(FinalizeCreditPenaltyAfterDelay(desiredFinal));
             }
             catch (Exception ex)
             {
@@ -252,45 +200,26 @@ namespace ConfigurableQuota.Patches
         {
             try
             {
-                var field = typeof(StartOfRound).GetField("groupCredits", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
-                             ?? typeof(StartOfRound).GetField("companyCredits", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-                if (field?.FieldType == typeof(int))
-                {
-                    return (int)field.GetValue(StartOfRound.Instance);
-                }
-            }
-            catch { }
-
-            try
-            {
                 var term = UnityEngine.Object.FindObjectOfType<Terminal>();
-                if (term != null)
-                {
-                    var tfield = typeof(Terminal).GetField("groupCredits", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
-                                  ?? typeof(Terminal).GetField("companyCredits", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-                    if (tfield?.FieldType == typeof(int))
-                    {
-                        return (int)tfield.GetValue(term);
-                    }
-                }
+                if (term != null) return term.groupCredits;
             }
             catch { }
 
             return 0;
         }
 
-        private static System.Collections.IEnumerator FinalizeCreditPenaltyAfterDelay(int snapshot, int desiredFinal)
+        private static System.Collections.IEnumerator FinalizeCreditPenaltyAfterDelay(int desiredFinal)
         {
-            yield return new WaitForSeconds(0.35f);
+            yield return new WaitForSeconds(1.5f);
 
             try
             {
                 var sor = StartOfRound.Instance;
                 if (sor == null) yield break;
 
+                int before = GetCurrentCredits();
                 SetCredits(desiredFinal);
-                NetworkSync.SyncCreditsToClients(desiredFinal);
-                Plugin.Log.LogInfo($"Credits penalized → {desiredFinal}");
+                Plugin.Log.LogInfo($"[Penalty] Credits: {before} → {desiredFinal} (-{before - desiredFinal})");
             }
             finally
             {
@@ -300,33 +229,11 @@ namespace ConfigurableQuota.Patches
 
         private static void SetCredits(int value)
         {
-            var sor = StartOfRound.Instance;
-            if (sor != null)
-            {
-                try
-                {
-                    var field = typeof(StartOfRound).GetField("groupCredits", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
-                                   ?? typeof(StartOfRound).GetField("companyCredits", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-                    if (field?.FieldType == typeof(int))
-                    {
-                        field.SetValue(sor, value);
-                    }
-                }
-                catch { }
-            }
-
             try
             {
                 var term = UnityEngine.Object.FindObjectOfType<Terminal>();
                 if (term != null)
-                {
-                    var field = typeof(Terminal).GetField("groupCredits", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
-                                  ?? typeof(Terminal).GetField("companyCredits", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-                    if (field?.FieldType == typeof(int))
-                    {
-                        field.SetValue(term, value);
-                    }
-                }
+                    term.SyncGroupCreditsServerRpc(value, term.numberOfItemsInDropship);
             }
             catch { }
         }
@@ -352,7 +259,8 @@ namespace ConfigurableQuota.Patches
 
                 NetworkSync.SyncQuotaToClients(newQuota);
 
-                Plugin.Log.LogInfo($"Quota penalized +{delta} ({pct:P0}), new: {newQuota}");
+                int oldQuota = tod.profitQuota - delta;
+                Plugin.Log.LogInfo($"[Penalty] Quota: {oldQuota} → {newQuota} (+{delta}, {pct:P0} penalty, {dead}/{total} dead)");
             }
         }
 
@@ -384,7 +292,7 @@ namespace ConfigurableQuota.Patches
             }
             catch (Exception ex)
             {
-                Plugin.Log.LogWarning($"[Losses] Error despawning facility items: {ex.Message}");
+                Plugin.Log.LogWarning($"Error despawning facility items: {ex.Message}");
             }
         }
 
@@ -421,7 +329,7 @@ namespace ConfigurableQuota.Patches
             }
             catch (Exception ex)
             {
-                Plugin.Log.LogWarning($"[Losses] Error applying losses: {ex.Message}");
+                Plugin.Log.LogWarning($"Error applying losses: {ex.Message}");
             }
         }
 
@@ -450,15 +358,13 @@ namespace ConfigurableQuota.Patches
         private static bool IsBodyOrBlacklisted(GrabbableObject g)
         {
             if (g == null) return true;
-
-            var typeName = g.GetType().Name;
-            if (typeName.IndexOf("Ragdoll", StringComparison.OrdinalIgnoreCase) >= 0) return true;
-            if (g.name.IndexOf("Ragdoll", StringComparison.OrdinalIgnoreCase) >= 0) return true;
+            if (g is RagdollGrabbableObject) return true;
+            if (g is ClipboardItem) return true;
 
             try
             {
-                string name = (g.itemProperties?.itemName ?? g.name).ToLowerInvariant();
-                return name.Contains("clipboard") || name.Contains("sticky note") || name.Contains("stickynote") || name.Contains("sticky_note");
+                string name = (g.itemProperties?.itemName ?? g.name);
+                return name.IndexOf("sticky note", StringComparison.OrdinalIgnoreCase) >= 0;
             }
             catch { return false; }
         }
@@ -495,7 +401,7 @@ namespace ConfigurableQuota.Patches
                 catch { }
             }
 
-            Plugin.Log.LogDebug($"Scrap loss: {removedCount}/{eligible} removed. [{string.Join(", ", removedNames)}]");
+            Plugin.Log.LogInfo($"Scrap: {removedCount}/{eligible} removed [{string.Join(", ", removedNames)}]");
         }
 
         private static void SelectAndRemoveEquipment(GrabbableObject[] equipItems)
@@ -527,7 +433,7 @@ namespace ConfigurableQuota.Patches
                 catch { }
             }
 
-            Plugin.Log.LogDebug($"Equipment loss: {removedCount}/{eligible} removed. [{string.Join(", ", removedNames)}]");
+            Plugin.Log.LogInfo($"[Losses] Equipment: {removedCount}/{eligible} removed [{string.Join(", ", removedNames)}]");
         }
 
         private static void ApplyValueLoss(GrabbableObject[] scrapItems)
@@ -567,14 +473,14 @@ namespace ConfigurableQuota.Patches
                 }
                 catch (Exception ex)
                 {
-                    Plugin.Log.LogWarning($"[Losses] Error reducing value for item: {ex.Message}");
+                    Plugin.Log.LogWarning($"Error reducing value for item: {ex.Message}");
                 }
             }
 
             if (syncData.Count > 0)
                 NetworkSync.SyncValueLossToClients(syncData.ToArray());
 
-            Plugin.Log.LogDebug($"Value loss {pct:P0}: {affected} items, ${totalOldValue} → ${totalNewValue}");
+            Plugin.Log.LogInfo($"Value: {affected} items reduced by {pct:P0} (${totalOldValue} → ${totalNewValue})");
         }
 
         private static void DespawnObject(GrabbableObject g)

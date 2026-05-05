@@ -8,8 +8,6 @@ namespace ConfigurableQuota.Patches
     [HarmonyPatch(typeof(TimeOfDay))]
     internal static class TimeOfDayQuotaPatch
     {
-        private const float DAY_SECONDS = 600f;
-
         [HarmonyPatch(nameof(TimeOfDay.SetNewProfitQuota))]
         [HarmonyPrefix]
         [HarmonyPriority(Priority.Low)]
@@ -20,8 +18,7 @@ namespace ConfigurableQuota.Patches
             ref float ___timeUntilDeadline,
             ref int ___quotaFulfilled,
             ref int ___daysUntilDeadline,
-            ref float ___totalTime,
-            ref QuotaSettings ___quotaVariables)
+            ref float ___totalTime)
         {
             try
             {
@@ -30,7 +27,7 @@ namespace ConfigurableQuota.Patches
                 if (ConfigManager.DisableQuota.Value)
                 {
                     ___profitQuota = Mathf.Max(0, ConfigManager.StartingQuota.Value);
-                    SetDeadlineTimer(ref ___daysUntilDeadline, ref ___totalTime, ref ___timeUntilDeadline);
+                    SetDeadlineTimer(___totalTime, ref ___daysUntilDeadline, ref ___timeUntilDeadline);
                     return false;
                 }
 
@@ -46,13 +43,22 @@ namespace ConfigurableQuota.Patches
                 ___profitQuota = newQuota;
                 ___quotaFulfilled = CalculateRollover(overage);
 
-                int deadline = SetDeadlineTimer(ref ___daysUntilDeadline, ref ___totalTime, ref ___timeUntilDeadline);
+                int deadline = SetDeadlineTimer(___totalTime, ref ___daysUntilDeadline, ref ___timeUntilDeadline, prevDays: daysLeftAtFulfill);
+
+                __instance.quotaVariables.deadlineDaysAmount = deadline;
+
                 __instance.SyncNewProfitQuotaClientRpc(___profitQuota, overtimeBonus, ___timesFulfilledQuota);
 
-                if (ConfigManager.RandomizeDeadline.Value)
-                {
-                    NetworkSync.SyncDeadlineToClients(deadline);
-                }
+                ___daysUntilDeadline = deadline;
+                ___timeUntilDeadline = ___totalTime * deadline;
+
+                NetworkSync.SyncDeadlineToClients(deadline);
+
+                Plugin.Log.LogInfo(
+                    $"[Quota #{___timesFulfilledQuota}] {previousQuota} \u2192 {newQuota}" +
+                    $" | Deadline: {deadline}d" +
+                    $" | Rollover: {___quotaFulfilled}" +
+                    $" | Overtime: {overtimeBonus}cr");
 
                 return false;
             }
@@ -135,7 +141,7 @@ namespace ConfigurableQuota.Patches
             return Mathf.RoundToInt(overage * Mathf.Clamp01(rolloverAmt));
         }
 
-        private static int SetDeadlineTimer(ref int days, ref float totalTime, ref float timeUntilDeadline)
+        private static int SetDeadlineTimer(float dayDuration, ref int days, ref float timeUntilDeadline, int prevDays = -1)
         {
             int d;
             if (ConfigManager.RandomizeDeadline.Value)
@@ -143,14 +149,16 @@ namespace ConfigurableQuota.Patches
                 int min = Math.Max(1, ConfigManager.DeadlineMin.Value);
                 int max = Math.Max(min, ConfigManager.DeadlineMax.Value);
                 d = UnityEngine.Random.Range(min, max + 1);
+
+                if (ConfigManager.DeadlineMustChange.Value && d == prevDays && min != max)
+                    d = UnityEngine.Random.Range(min, max + 1);
             }
             else
             {
                 d = Math.Max(1, ConfigManager.DaysToDeadline.Value);
             }
             days = d;
-            totalTime = days * DAY_SECONDS;
-            timeUntilDeadline = totalTime;
+            timeUntilDeadline = d * dayDuration;
             return d;
         }
 
@@ -165,7 +173,41 @@ namespace ConfigurableQuota.Patches
         [HarmonyPostfix]
         private static void TimeOfDay_Start_Postfix(TimeOfDay __instance)
         {
-            ApplyQuotaVariables(__instance);
+            if (__instance.timesFulfilledQuota != 0) return;
+
+            if (__instance.IsServer && ConfigManager.RandomizeDeadline.Value)
+                NetworkSync.SyncDeadlineToClients(__instance.daysUntilDeadline);
+
+            // summary
+            if (true)
+            {
+                string deadlineDesc = ConfigManager.RandomizeDeadline.Value
+                    ? $"randomized {ConfigManager.DeadlineMin.Value}-{ConfigManager.DeadlineMax.Value}d (first: {__instance.daysUntilDeadline}d)"
+                    : $"fixed {ConfigManager.DaysToDeadline.Value}d";
+                string quotaCap = ConfigManager.QuotaCap.Value != -1 ? $", cap={ConfigManager.QuotaCap.Value}" : "";
+                string finalLevel = ConfigManager.FinalLevel.Value != -1
+                    ? $", finalLevel={ConfigManager.FinalLevel.Value} (+{ConfigManager.FinalIncrease.Value} flat)"
+                    : "";
+                string creditPenalty = ConfigManager.CreditPenaltiesEnabled.Value
+                    ? $"credits={ConfigManager.CreditPenaltyPercentPerPlayer.Value:P0}/player (cap {ConfigManager.CreditPenaltyPercentCap.Value:P0})"
+                    : "credits=off";
+                string quotaPenalty = ConfigManager.QuotaPenaltiesEnabled.Value
+                    ? $"quota={ConfigManager.QuotaPenaltyPercentPerPlayer.Value:P0}/player (cap {ConfigManager.QuotaPenaltyPercentCap.Value:P0})"
+                    : "quota=off";
+                string losses =
+                    $"scrap={ConfigManager.ScrapLossEnabled.Value}" +
+                    $", value={ConfigManager.ValueLossEnabled.Value}({ConfigManager.ValueLossPercent.Value:P0})" +
+                    $", equip={ConfigManager.EquipmentLossEnabled.Value}";
+
+                Plugin.Log.LogInfo(
+                    $"Quota: start={ConfigManager.StartingQuota.Value}, base+{ConfigManager.BaseIncrease.Value}/cycle, sharpness={ConfigManager.CurveSharpness.Value}{quotaCap}{finalLevel}");
+                Plugin.Log.LogInfo(
+                    $"Deadline: {deadlineDesc} | Credits start: {ConfigManager.StartingCredits.Value}");
+                Plugin.Log.LogInfo(
+                    $"Penalties: {creditPenalty} | {quotaPenalty}");
+                Plugin.Log.LogInfo(
+                    $"Losses: {losses}");
+            }
         }
 
         private static void ApplyQuotaVariables(TimeOfDay instance)
@@ -176,9 +218,17 @@ namespace ConfigurableQuota.Patches
                 {
                     instance.quotaVariables.startingQuota = ConfigManager.StartingQuota.Value;
                     instance.quotaVariables.startingCredits = ConfigManager.StartingCredits.Value;
-                    instance.quotaVariables.deadlineDaysAmount = ConfigManager.RandomizeDeadline.Value
-                        ? Math.Max(1, ConfigManager.DeadlineMin.Value)
-                        : ConfigManager.DaysToDeadline.Value;
+
+                    if (ConfigManager.RandomizeDeadline.Value)
+                    {
+                        int min = Math.Max(1, ConfigManager.DeadlineMin.Value);
+                        int max = Math.Max(min, ConfigManager.DeadlineMax.Value);
+                        instance.quotaVariables.deadlineDaysAmount = UnityEngine.Random.Range(min, max + 1);
+                    }
+                    else
+                    {
+                        instance.quotaVariables.deadlineDaysAmount = ConfigManager.DaysToDeadline.Value;
+                    }
                 }
             }
             catch (Exception e)
@@ -217,7 +267,7 @@ namespace ConfigurableQuota.Patches
         {
             try
             {
-                SetDeadlineTimer(ref days, ref totalTime, ref timeUntilDeadline);
+                SetDeadlineTimer(totalTime, ref days, ref timeUntilDeadline);
 
                 var sor = StartOfRound.Instance;
                 if (sor != null)

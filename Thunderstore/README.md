@@ -6,25 +6,26 @@
 <br><br>
 
 ---
-# ConfigurableQuota
+# Configurable Quota
 ### **Allows users to configure every aspect of the quota the way they want.**
 ---
 
 ## Features
 
 - Configure starting credits, starting quota and deadline
-- Curved quota growth with adjustable sharpness and randomizer
-- Growth dampening - slows down quota increases the longer you play
-- Player-count scaling with threshold, cap, and per-player multiplier
-- Rollover - carry excess fulfillment into the next cycle
-- Randomized deadline length each cycle
-- Disable the quota system entirely
-- Credit penalties when crew members die
-- Quota penalties when crew members die
-- Randomly lose collected scrap items on full crew wipe
-- Permanently reduce scrap value on full crew wipe
-- Randomly lose purchased equipment on full crew wipe
-- Adjustable new quota animation speed
+- Configure curved quota growth with sharpness and randomizer
+- Configure growth dampening which slows down quota increases the longer you play
+- Configure player count scaling with threshold, cap and per player multiplier
+- Configure rollover which transfers any extra fulfilment to the next quota
+- Configure randomized deadline
+- Configure credit penalties when crew members die
+- Configure quota penalties when crew members die
+- Configure randomly lost scrap items on a full crew wipe
+- Configure reduced scrap value on full crew wipe
+- Configure randomly lost purchased equipment on a full crew wipe
+- Disable quota entirely
+- Configure new quota animation speed
+- Show actual penalty values on fine UI
 
 ---
 
@@ -32,78 +33,78 @@
 
 ### **0. Basic**
 
-- **StartingCredits** - Credits you start with on a new game
-- **StartingQuota** - First quota value on a new game
-- **DaysToDeadline** - Days per quota cycle. Ignored when `RandomizeDeadline` is on
-- **RandomizeDeadline** - Pick a random deadline length each cycle using the min/max below
-- **DeadlineMin** - Minimum days when random deadline is enabled
-- **DeadlineMax** - Maximum days when random deadline is enabled
+- **Starting Credits** - Credits you start with on a new game
+- **Starting Quota** - First quota value on a new game
+- **Days To Deadline** - Days per quota cycle. Ignored when `RandomizeDeadline` is on
+- **Randomize Deadline** - Pick a random deadline length each cycle using the min/max below
+- **Deadline Min** - Minimum days when random deadline is enabled
+- **Deadline Max** - Maximum days when random deadline is enabled
 
 ### **1. Leveling**
 
-- **BaseIncrease** - Base amount the quota goes up each cycle
-- **CurveSharpness** - Controls how fast the quota scales. Higher = slower growth
-- **RandomizerMultiplier** - Adds variation to quota increases. 0 = no randomness, 1 = vanilla variance
-- **FinalLevel** - Quota value where curved growth switches to flat. Set -1 to disable
-- **FinalIncrease** - Flat increase used after hitting `FinalLevel`
-- **QuotaCap** - Maximum quota value. Set -1 for no limit
-- **EnableGrowthDampening** - Gradually reduces quota growth the longer you play
-- **DampeningStartAt** - How many fulfilled quotas before dampening kicks in
-- **DampeningSharpness** - How aggressively growth is reduced. Lower = stronger dampening
+- **Base Increase** - Base amount the quota goes up each cycle
+- **Curve Sharpness** - Controls how fast the quota scales. Higher = slower growth
+- **Randomizer Multiplier** - Adds variation to quota increases. 0 = no randomness, 1 = vanilla variance
+- **Final Level** - Quota value where curved growth switches to flat. Set -1 to disable
+- **Final Increase** - Flat increase used after hitting `FinalLevel`
+- **Quota Cap** - Maximum quota value. Set -1 for no limit
+- **Enable Growth Dampening** - Gradually reduces quota growth the longer you play
+- **Dampening Start At** - How many fulfilled quotas before dampening kicks in
+- **Dampening Sharpness** - How aggressively growth is reduced. Lower = stronger dampening
 
-### **2. PlayerScaling**
+### **2. Player Scaling**
 
-- **EnablePlayerMultiplier** - Scale quota increases based on how many players are connected
-- **PlayerThreshold** - Player count where scaling starts
-- **PlayerCap** - Maximum players counted for scaling
-- **MultPerPlayer** - Extra multiplier per player above the threshold. Example: 0.25 = +25% per player
+- **Enable Player Multiplier** - Scale quota increases based on how many players are connected
+- **Player Threshold** - Player count where scaling starts
+- **Player Cap** - Maximum players counted for scaling
+- **Multiplier Per Player** - Extra multiplier per player above the threshold. Example: 0.25 = +25% per player
 
 ### **3. Optional**
 
-- **DisableQuota** - Disables the quota
-- **RolloverAmount** - Percentage of excess fulfillment that carries over to the next cycle. 0 = none
+- **Disable Quota** - Disables the quota
+- **Rollover Amount** - Percentage of excess fulfillment that carries over to the next cycle. 0 = none
 
-### **4. Penalties.Credits**
+### **4. Penalties Credits**
 
 - **Enabled** - Reduce credits when crew members die
-- **OnGordion** - Apply credit penalties even when visiting Gordion
-- **PercentPerPlayer** - Credits lost per dead player. Ignored if `Dynamic` is on
+- **On Gordion** - Apply credit penalties even when visiting Gordion
+- **Percent Per Player** - Credits lost per dead player. Ignored if `Dynamic` is on
 - **Dynamic** - Use team death ratio instead of per-player count
-- **PercentCap** - Maximum percentage of credits that can be lost
-- **PercentThreshold** - Ignore penalties below this percentage
-- **RecoveryBonus** - Reduce penalty if you recover bodies
+- **Percent Cap** - Maximum percentage of credits that can be lost
+- **Percent Threshold** - Ignore penalties below this percentage
+- **Recovery Bonus** - Reduce penalty if you recover bodies
 
-### **5. Penalties.Quota**
+### **5. Penalties Quota**
 
 - **Enabled** - Increase the current quota when crew members die
-- **OnGordion** - Apply quota penalties even when visiting Gordion
-- **PercentPerPlayer** - Quota increase per dead player. Ignored if `Dynamic` is on
+- **On Gordion** - Apply quota penalties even when visiting Gordion
+- **Percent Per Player** - Quota increase per dead player. Ignored if `Dynamic` is on
 - **Dynamic** - Use team death ratio instead of per-player count
-- **PercentCap** - Maximum percentage the quota can increase
-- **PercentThreshold** - Ignore penalties below this percentage
-- **RecoveryBonus** - Reduce penalty if you recover bodies
+- **Percent Cap** - Maximum percentage the quota can increase
+- **Percent Threshold** - Ignore penalties below this percentage
+- **Recovery Bonus** - Reduce penalty if you recover bodies
 
-### **6. Loss.Scrap**
+### **6. Loss Scrap**
 
 - **Enabled** - Randomly lose collected scrap items when the entire crew is wiped
-- **ItemsSafeChance** - Chance for each item to be protected from loss
-- **LoseEachScrapChance** - Chance to lose an unprotected item
-- **MaxLostScrapItems** - Maximum scrap items that can be lost per round
+- **Items Safe Chance** - Chance for each item to be protected from loss
+- **Lose Each Scrap Chance** - Chance to lose an unprotected item
+- **Max Lost Scrap Items** - Maximum scrap items that can be lost per round
 
-### **7. Loss.Value**
+### **7. Loss Value**
 
-- **Enabled** - Permanently reduce scrap value of all ship items on full crew wipe. Persists to the next day
-- **Percent** - How much value to remove. Example: 0.25 = items lose 25% of their value, stacks on repeated wipes
+- **Enabled** - Reduce scrap value of all ship items on full crew wipe
+- **Percent** - How much of scrap value to remove. Example: 0.25 = items lose 25% of their value, stacks on repeated wipes
 
-### **8. Loss.Equipment**
+### **8. Loss Equipment**
 
 - **Enabled** - Randomly lose purchased equipment when the entire crew is wiped
-- **LoseEachEquipmentChance** - Chance for each equipment item to be lost
-- **MaxLostEquipmentItems** - Maximum equipment items that can be lost per round
+- **Lose Each Equipment Chance** - Chance for each equipment item to be lost
+- **Max Lost Equipment Items** - Maximum equipment items that can be lost per round
 
 ### **9. UI**
 
-- **QuotaAnimationSpeed** - Speed of the new quota pop-up animation. Higher = faster
+- **Quota Animation Speed** - Speed of the new quota pop-up animation. Higher = faster
 
 ---
 
@@ -118,6 +119,7 @@ Not recommended.
 ## Credits
 
 - Developed by **[seeya](https://thunderstore.io/c/lethal-company/p/seechela/)**
+- Inspired mostly from QuotaOverhaul, AfineQuota and ChocoQuota
 
 ---
 

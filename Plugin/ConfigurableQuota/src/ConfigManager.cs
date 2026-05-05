@@ -50,6 +50,7 @@ namespace ConfigurableQuota
         public static ConfigEntry<bool> RandomizeDeadline = null!;
         public static ConfigEntry<int> DeadlineMin = null!;
         public static ConfigEntry<int> DeadlineMax = null!;
+        public static ConfigEntry<bool> DeadlineMustChange = null!;
 
         public static ConfigEntry<bool> EnableGrowthDampening = null!;
         public static ConfigEntry<int> DampeningStartAt = null!;
@@ -67,52 +68,58 @@ namespace ConfigurableQuota
                 "0. Basic",
                 "StartingCredits",
                 60,
-                "Starting credits for a new game."
-            );
-
-            DaysToDeadline = config.Bind(
-                "0. Basic",
-                "DaysToDeadline",
-                3,
-                "Number of days to meet each quota. Ignored when RandomizeDeadline is enabled."
-            );
-            RandomizeDeadline = config.Bind(
-                "0. Basic",
-                "RandomizeDeadline",
-                false,
-                "Randomize the deadline each quota cycle using DeadlineMin/Max instead of a fixed DaysToDeadline."
-            );
-            DeadlineMin = config.Bind(
-                "0. Basic",
-                "DeadlineMin",
-                3,
-                "Minimum days for deadline when RandomizeDeadline is enabled."
-            );
-            DeadlineMax = config.Bind(
-                "0. Basic",
-                "DeadlineMax",
-                4,
-                "Maximum days for deadline when RandomizeDeadline is enabled. Example: Min=3, Max=5 = random 3-5 days each cycle."
+                "Starting credits for a new lobby."
             );
 
             StartingQuota = config.Bind(
                 "0. Basic",
                 "StartingQuota",
                 130,
-                "First quota value at the start of a new game."
+                "Starting quota for a new lobby."
+            );
+
+            DaysToDeadline = config.Bind(
+                "0. Basic",
+                "DaysToDeadline",
+                3,
+                "Number of days to meet each quota. Ignored if RandomizeDeadline is enabled."
+            );
+            RandomizeDeadline = config.Bind(
+                "0. Basic",
+                "RandomizeDeadline",
+                false,
+                "Randomize the deadline each quota using Deadline Min/Max instead of a fixed Days To Deadline."
+            );
+            DeadlineMin = config.Bind(
+                "0. Basic",
+                "DeadlineMin",
+                3,
+                "Minimum days for deadline. REQUIRES 'Randomize Deadline' SET TO TRUE"
+            );
+            DeadlineMax = config.Bind(
+                "0. Basic",
+                "DeadlineMax",
+                5,
+                "Maximum days for deadline. REQUIRES 'Randomize Deadline' SET TO TRUE"
+            );
+            DeadlineMustChange = config.Bind(
+                "0. Basic",
+                "DeadlineMustChange",
+                true,
+                "New deadline after fulfilling quota must differ from the previous one. REQUIRES 'Randomize Deadline' SET TO TRUE"
             );
 
             BaseIncrease = config.Bind(
                 "0. Basic",
                 "BaseIncrease",
                 100,
-                "Base quota increase per cycle. Combined with CurveSharpness to calculate growth."
+                "Base quota increase. Combined with 'Curve Sharpness' to calculate growth."
             );
             CurveSharpness = config.Bind(
                 "0. Basic",
                 "CurveSharpness",
                 16f,
-                "Controls quota growth curve. Higher = slower growth. Formula: increase ≈ BaseIncrease × (1 + quotaCount²/Sharpness).."
+                "Quota growth curve. Higher = slower growth. Formula: increase ≈ BaseIncrease x (1 + quotaCount²/Sharpness)"
             );
             RandomizerMultiplier = config.Bind(
                 "0. Basic",
@@ -125,56 +132,56 @@ namespace ConfigurableQuota
                 "1. Leveling",
                 "FinalLevel",
                 -1,
-                "Quota value where growth switches from curved to flat. Set -1 to disable and use curve forever."
+                "When quota reaches this value, the Base Increase and Curve Sharpness are ignored. Set -1 to disable."
             );
             FinalIncrease = config.Bind(
                 "1. Leveling",
                 "FinalIncrease",
                 200,
-                "Fixed increase amount used after reaching FinalLevel."
+                "Fixed increase amount used after reaching Final Level value."
             );
             QuotaCap = config.Bind(
                 "1. Leveling",
                 "QuotaCap",
                 -1,
-                "Maximum quota value. Quota will never exceed this amount. Set -1 for no limit."
+                "Maximum quota value, quota will never increase more than this amount. Set -1 for no limit."
             );
             EnableGrowthDampening = config.Bind(
                 "1. Leveling",
                 "EnableGrowthDampening",
                 false,
-                "Gradually reduces quota growth after a number of fulfilled cycles. Growth slows down the longer you play."
+                "Gradually reduces quota growth after a number of fulfilled cycles, growth will slow down the longer you play."
             );
             DampeningStartAt = config.Bind(
                 "1. Leveling",
                 "DampeningStartAt",
                 6,
-                "Number of quota cycles before dampening begins. Example: 6 = growth starts dampening after the 6th fulfilled quota."
+                "Number of quota cycles before dampening begins."
             );
             DampeningSharpness = config.Bind(
                 "1. Leveling",
                 "DampeningSharpness",
                 11f,
-                "Controls dampening intensity. Lower values reduce growth more aggressively. Example: 11 = moderate dampening."
+                "Controls dampening intensity. Lower values reduce growth more aggressively."
             );
 
             EnablePlayerMultiplier = config.Bind(
                 "2. PlayerScaling",
                 "EnablePlayerMultiplier",
                 false,
-                "Scale quota increases based on player count. Not in vanilla. Useful for balancing larger crews."
+                "Scale quota increases based on player count."
             );
             PlayerThreshold = config.Bind(
                 "2. PlayerScaling",
                 "PlayerThreshold",
-                4,
-                "Player count where scaling begins. Example: 4 means scaling starts at 5+ players."
+                2,
+                "Player count where scaling begins. Example: 2 means scaling starts at 3+ players."
             );
             PlayerCap = config.Bind(
                 "2. PlayerScaling",
                 "PlayerCap",
-                8,
-                "Maximum players counted for scaling. Example: 8 means player 9+ don't increase difficulty further."
+                4,
+                "Maximum players counted for scaling. Example: 4 means player 5+ will not increase the quota multiplier."
             );
             MultPerPlayer = config.Bind(
                 "2. PlayerScaling",
@@ -187,14 +194,14 @@ namespace ConfigurableQuota
                 "3. Optional",
                 "DisableQuota",
                 false,
-                "Completely disables the quota system. Enables endless exploration mode."
+                "Completely disables the quota system."
             );
             RolloverAmount = config.Bind(
                 "3. Optional",
                 "RolloverAmount",
                 0.0f,
                 new ConfigDescription(
-                    "Percentage of excess scrap value (above quota) that carries over to the next cycle. 0 = none (vanilla), 0.5 = 50%, 1.0 = 100%.",
+                    "Percentage of extra scrap value that goes above the set limit and is added to the next quota. 0 = none (vanilla), 0.5 = 50%, 1.0 = 100%.",
                     new AcceptableValueRange<float>(0f, 1f)
                 )
             );
@@ -209,25 +216,25 @@ namespace ConfigurableQuota
                 "4. Penalties.Credits",
                 "OnGordion",
                 false,
-                "Apply credit penalties even when visiting the Company moon (Gordion)."
+                "Apply credit penalties even when visiting The Company."
             );
             CreditPenaltyPercentPerPlayer = config.Bind(
                 "4. Penalties.Credits",
                 "PercentPerPlayer",
                 0.15f,
-                "Credits lost per dead player. Example: 0.15 = lose 15% of credits per death. Ignored if Dynamic is true."
+                "Credits lost per dead player. Example: 0.15 = lose 15% of credits per death. Ignored if 'Dynamic' is true."
             );
             CreditPenaltiesDynamic = config.Bind(
                 "4. Penalties.Credits",
                 "Dynamic",
                 false,
-                "Use team death ratio instead of per-player. Example: 2 dead out of 4 total = 50% penalty, not 30% (2×15%)."
+                "Use team death ratio instead of per-player. Example: 2 dead out of 4 total = 50% penalty, not 30% (2x15%)."
             );
             CreditPenaltyPercentCap = config.Bind(
                 "4. Penalties.Credits",
                 "PercentCap",
                 0.8f,
-                "Maximum percentage of credits that can be lost. Example: 0.8 = lose at most 80% of your credits."
+                "Maximum percentage of credits that can be lost."
             );
             CreditPenaltyPercentThreshold = config.Bind(
                 "4. Penalties.Credits",
@@ -252,13 +259,13 @@ namespace ConfigurableQuota
                 "5. Penalties.Quota",
                 "OnGordion",
                 false,
-                "Apply quota penalties even when visiting the Company moon (Gordion)."
+                "Apply quota penalties even when visiting The Company."
             );
             QuotaPenaltyPercentPerPlayer = config.Bind(
                 "5. Penalties.Quota",
                 "PercentPerPlayer",
                 0.1f,
-                "Quota increase per dead player. Example: 0.1 = +10% to current quota per death. Ignored if Dynamic is true."
+                "Quota increase per dead player. Example: 0.1 = +10% to current quota per death. Ignored if 'Dynamic' is true."
             );
             QuotaPenaltiesDynamic = config.Bind(
                 "5. Penalties.Quota",
@@ -289,14 +296,14 @@ namespace ConfigurableQuota
                 "6. Loss.Scrap",
                 "Enabled",
                 false,
-                "Randomly lose collected scrap items when all players die."
+                "Randomly lose collected scrap when all crew dies."
             );
             ItemsSafeChance = config.Bind(
                 "6. Loss.Scrap",
                 "ItemsSafeChance",
                 0.5f,
                 new ConfigDescription(
-                    "Chance for each item to be protected from loss. Example: 0.7 = 70% chance each item is safe.",
+                    "Chance for each scrap to be protected from loss. Example: 0.7 = 70% chance each scrap is safe.",
                     new AcceptableValueRange<float>(0f, 1f)
                 )
             );
@@ -305,7 +312,7 @@ namespace ConfigurableQuota
                 "LoseEachScrapChance",
                 0.1f,
                 new ConfigDescription(
-                    "If an item is not safe, this is the chance it gets lost. Example: 0.2 = 20% chance to lose unprotected items.",
+                    "If scrap is not safe, this is the chance it gets lost. Example: 0.2 = 20% chance to lose unprotected scrap.",
                     new AcceptableValueRange<float>(0f, 1f)
                 )
             );
@@ -313,21 +320,21 @@ namespace ConfigurableQuota
                 "6. Loss.Scrap",
                 "MaxLostScrapItems",
                 2,
-                "Maximum scrap items that can be lost per round."
+                "Maximum scrap that can be lost per round."
             );
 
             ValueLossEnabled = config.Bind(
                 "7. Loss.Value",
                 "Enabled",
                 false,
-                "Permanently reduce the scrap value of all ship items at end of round when the entire crew is wiped. Reduced values persist to the next day."
+                "Reduce the scrap value of all ship items when the entire crew is wiped."
             );
             ValueLossPercent = config.Bind(
                 "7. Loss.Value",
                 "Percent",
                 0.2f,
                 new ConfigDescription(
-                    "Percentage to reduce scrap value. Example: 0.25 = all scrap items permanently lose 25% of their value. Stacks multiplicatively on repeated wipes.",
+                    "Percentage to reduce scrap value. Example: 0.25 = all scrap items lose 25% of their value, stacks on repeated wipes.",
                     new AcceptableValueRange<float>(0f, 1f)
                 )
             );
@@ -336,7 +343,7 @@ namespace ConfigurableQuota
                 "8. Loss.Equipment",
                 "Enabled",
                 false,
-                "Randomly lose purchased equipment (shovels, flashlights, etc.) when all players die."
+                "Randomly lose purchased equipment when all crew dies."
             );
             LoseEachEquipmentChance = config.Bind(
                 "8. Loss.Equipment",

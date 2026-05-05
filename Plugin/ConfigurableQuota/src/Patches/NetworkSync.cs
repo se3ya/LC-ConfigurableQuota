@@ -68,26 +68,8 @@ namespace ConfigurableQuota.Patches
         {
             try
             {
-                var sor = StartOfRound.Instance;
-                if (sor == null) return;
-
-                var field = typeof(StartOfRound).GetField("groupCredits", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic)
-                           ?? typeof(StartOfRound).GetField("companyCredits", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic);
-                if (field?.FieldType == typeof(int))
-                {
-                    field.SetValue(sor, credits);
-                }
-
                 var term = UnityEngine.Object.FindObjectOfType<Terminal>();
-                if (term != null)
-                {
-                    var tfield = typeof(Terminal).GetField("groupCredits", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic)
-                                  ?? typeof(Terminal).GetField("companyCredits", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic);
-                    if (tfield?.FieldType == typeof(int))
-                    {
-                        tfield.SetValue(term, credits);
-                    }
-                }
+                if (term != null) term.groupCredits = credits;
 
                 Plugin.Log.LogDebug($"Client received credits sync: {credits}");
             }
@@ -223,12 +205,8 @@ namespace ConfigurableQuota.Patches
                 if (tod.quotaVariables != null)
                     tod.quotaVariables.deadlineDaysAmount = days;
 
-                float totalTime = days * 600f;
-                var type = typeof(TimeOfDay);
-                var flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic;
-                type.GetField("daysUntilDeadline", flags)?.SetValue(tod, days);
-                type.GetField("totalTime", flags)?.SetValue(tod, totalTime);
-                type.GetField("timeUntilDeadline", flags)?.SetValue(tod, totalTime);
+                tod.daysUntilDeadline = days;
+                tod.timeUntilDeadline = days * tod.totalTime;
 
                 Plugin.Log.LogDebug($"Client updated deadline: {days} days");
             }
