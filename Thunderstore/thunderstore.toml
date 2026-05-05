@@ -8,7 +8,7 @@ repository = "https://thunderstore.io"
 namespace = "seechela"
 name = "Configurable_Quota"
 description = "Allows users to configure every aspect of the quota the way they want."
-websiteUrl = "https://github.com/se3ya/CustomPosters"
+websiteUrl = "https://github.com/se3ya/LC-ConfigurableQuota"
 containsNswContent = false
 
 [package.dependencies]
