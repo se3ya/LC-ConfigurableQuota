@@ -46,13 +46,22 @@ namespace ConfigurableQuota.Patches
         {
             try
             {
-                var (dead, total, recovered) = PenaltyHelpers.CountDeathsAndRecovered();
-
-                if (dead == 0 && playersDead > 0)
+                int dead, total, recovered;
+                if (PenaltiesOnLandingPatch.HasPenaltyCache)
                 {
-                    dead = playersDead;
-                    recovered = bodiesInsured;
-                    total = Mathf.Max(dead + 1, total);
+                    dead = PenaltiesOnLandingPatch.CachedDead;
+                    total = PenaltiesOnLandingPatch.CachedTotal;
+                    recovered = PenaltiesOnLandingPatch.CachedRecovered;
+                }
+                else
+                {
+                    (dead, total, recovered) = PenaltyHelpers.CountDeathsAndRecovered();
+                    if (dead == 0 && playersDead > 0)
+                    {
+                        dead = playersDead;
+                        recovered = bodiesInsured;
+                        total = Mathf.Max(dead + 1, total);
+                    }
                 }
 
                 bool atCompany = PenaltyHelpers.IsOnGordion();
@@ -102,7 +111,7 @@ namespace ConfigurableQuota.Patches
                 string line1 = creditPct > 0f
                     ? $"{dead} casualties: -{Mathf.RoundToInt(creditPct * 100)}%"
                     : $"{dead} casualties";
-                string line2 = $"({recovered} bodies recovered.)";
+                string line2 = $"({recovered} of {dead} bodies recovered.)";
                 string text = line1 + "\n" + line2;
 
                 if (quotaPct > 0f)

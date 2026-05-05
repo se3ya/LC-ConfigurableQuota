@@ -28,18 +28,36 @@ namespace ConfigurableQuota.Patches
                 bool isDead = player.isPlayerDead;
 
                 if (isControlled || isDead)
-                {
                     total++;
-                }
 
                 if (!isDead) continue;
 
                 dead++;
-                Transform? bodyTransform = player.deadBody?.transform;
-                if (bodyTransform != null && IsPositionInsideShip(bodyTransform.position))
+
+                var bodyInfo = player.deadBody;
+                RagdollGrabbableObject? ragdoll = bodyInfo?.grabBodyObject as RagdollGrabbableObject;
+
+                if (ragdoll == null)
                 {
-                    recovered++;
+                    foreach (var r in UnityEngine.Object.FindObjectsOfType<RagdollGrabbableObject>())
+                    {
+                        if (r?.GetComponent<DeadBodyInfo>()?.playerScript == player)
+                        {
+                            ragdoll = r;
+                            break;
+                        }
+                    }
                 }
+
+                bool inShip = false;
+                if (ragdoll != null)
+                {
+                    bool flagCheck = ragdoll.isInShipRoom;
+                    bool posCheck = IsPositionInsideShip(ragdoll.transform.position);
+                    inShip = flagCheck || posCheck;
+                }
+
+                if (inShip) recovered++;
             }
 
             return (dead, Math.Max(total, 1), Mathf.Clamp(recovered, 0, dead));
@@ -92,6 +110,19 @@ namespace ConfigurableQuota.Patches
         private static bool _creditScheduled;
         internal static bool _lossesAppliedThisRound;
 
+        internal static int CachedDead;
+        internal static int CachedTotal;
+        internal static int CachedRecovered;
+        internal static bool HasPenaltyCache;
+
+        internal static void CachePenaltyCounts(int dead, int total, int recovered)
+        {
+            CachedDead = dead;
+            CachedTotal = total;
+            CachedRecovered = recovered;
+            HasPenaltyCache = true;
+        }
+
         [HarmonyPatch("DespawnPropsAtEndOfRound")]
         [HarmonyPrefix]
         private static bool DespawnPrefix(bool despawnAllItems)
@@ -109,6 +140,8 @@ namespace ConfigurableQuota.Patches
 
                     ApplyLossesWhenAllDead();
                     _lossesAppliedThisRound = true;
+
+                    CachePenaltyCounts(dead, total, recovered);
 
                     if (ConfigManager.CreditPenaltiesEnabled.Value)
                     {
@@ -145,6 +178,8 @@ namespace ConfigurableQuota.Patches
 
                 var (dead, total, recovered) = PenaltyHelpers.CountDeathsAndRecovered();
                 if (dead <= 0) return;
+
+                CachePenaltyCounts(dead, total, recovered);
 
                 bool atCompany = PenaltyHelpers.IsOnGordion();
 
@@ -464,7 +499,9 @@ namespace ConfigurableQuota.Patches
                         }
                         catch { }
 
-                        syncData.Add(new SyncValueLossData(g.GetInstanceID(), newValue));
+                        var netObj = g.GetComponent<Unity.Netcode.NetworkObject>();
+                        if (netObj != null)
+                            syncData.Add(new SyncValueLossData(netObj.NetworkObjectId, newValue));
 
                         totalOldValue += oldValue;
                         totalNewValue += newValue;
@@ -510,6 +547,7 @@ namespace ConfigurableQuota.Patches
         {
             PenaltiesOnLandingPatch._appliedThisRound = false;
             PenaltiesOnLandingPatch._lossesAppliedThisRound = false;
+            PenaltiesOnLandingPatch.HasPenaltyCache = false;
         }
     }
 }

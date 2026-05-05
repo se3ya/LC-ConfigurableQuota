@@ -155,7 +155,8 @@ namespace ConfigurableQuota.Patches
                 {
                     try
                     {
-                        if (g != null && g.GetInstanceID() == data.InstanceId && g.itemProperties?.isScrap == true)
+                        var netObj = g.GetComponent<Unity.Netcode.NetworkObject>();
+                        if (g != null && netObj != null && netObj.NetworkObjectId == data.NetworkObjectId && g.itemProperties?.isScrap == true)
                         {
                             g.scrapValue = data.NewValue;
                             try { g.SetScrapValue(data.NewValue); } catch { }
@@ -222,12 +223,12 @@ namespace ConfigurableQuota.Patches
     [Serializable]
     public struct SyncValueLossData
     {
-        public int InstanceId;
+        public ulong NetworkObjectId;
         public int NewValue;
 
-        public SyncValueLossData(int instanceId, int newValue)
+        public SyncValueLossData(ulong networkObjectId, int newValue)
         {
-            InstanceId = instanceId;
+            NetworkObjectId = networkObjectId;
             NewValue = newValue;
         }
     }

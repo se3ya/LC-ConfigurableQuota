@@ -1,0 +1,3 @@
+- Compatibility with LethalConstellations + LethalMoonUnlock
+  - Deadline based on constellations
+  - Random Deadline based on constellations
