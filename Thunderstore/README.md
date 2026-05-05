@@ -6,7 +6,7 @@
 <br><br>
 
 ---
-# Configurable Quota
+# ConfigurableQuota
 ### **Allows users to configure every aspect of the quota the way they want.**
 ---
 

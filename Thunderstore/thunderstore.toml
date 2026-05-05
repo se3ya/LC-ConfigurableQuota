@@ -1,0 +1,29 @@
+[config]
+schemaVersion = "0.0.1"
+
+[general]
+repository = "https://thunderstore.io"
+
+[package]
+namespace = "seechela"
+name = "Configurable_Quota"
+description = "Allows users to configure every aspect of the quota the way they want."
+websiteUrl = "https://github.com/se3ya/CustomPosters"
+containsNswContent = false
+
+[package.dependencies]
+BepInEx-BepInExPack = "5.4.2305"
+xilophor-LethalNetworkAPI = "3.3.3"
+
+[build]
+icon = "./icon.png"
+readme = "./README.md"
+outdir = "./build"
+
+[[build.copy]]
+source = "../Plugin/ConfigurableQuota/bin/Release/netstandard2.1/ConfigurableQuota.dll"
+target = "BepInEx/plugins/ConfigurableQuota/ConfigurableQuota.dll"
+
+[[build.copy]]
+source = "./CHANGELOG.md"
+target = "/"
