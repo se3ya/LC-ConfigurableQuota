@@ -26,6 +26,7 @@
 - Disable quota entirely
 - Configure new quota animation speed
 - Show actual penalty values on fine UI
+- __LethalConstellations__ compatibility with per-constellation deadline modes _[ fixed, random or use global ]_
 
 ---
 
@@ -36,7 +37,7 @@
 - **Starting Credits** - Credits you start with on a new game
 - **Starting Quota** - First quota value on a new game
 - **Days To Deadline** - Days per quota cycle. Ignored when `RandomizeDeadline` is on
-- **Randomize Deadline** - Pick a random deadline length each cycle using the min/max below
+- **Randomize Deadline** - Pick a random deadline length each cycle using the min/max below. Also used by constellations in `Use Global` mode
 - **Deadline Min** - Minimum days when random deadline is enabled
 - **Deadline Max** - Maximum days when random deadline is enabled
 
@@ -105,6 +106,14 @@
 ### **9. UI**
 
 - **Quota Animation Speed** - Speed of the new quota pop-up animation. Higher = faster
+
+### **10. Compatibility LethalConstellations**
+
+- **ConfigurableQuota_Constellations.cfg** - Auto-generates only when LethalConstellations is detected
+- **Deadline Mode** - `UseGlobal`, `Fixed`, or `Random` for each constellation independently
+- **Fixed Days To Deadline** - Used when that constellation is set to `Fixed`
+- **Deadline Min** - Used when that constellation is set to `Random`
+- **Deadline Max** - Used when that constellation is set to `Random`
 
 ---
 

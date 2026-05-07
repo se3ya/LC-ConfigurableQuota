@@ -226,6 +226,8 @@ namespace ConfigurableQuota.Patches
         {
             try
             {
+                ApplyDeadline(days);
+
                 if (_syncDeadlineMessage == null)
                 {
                     Plugin.Log.LogWarning("Deadline message not initialized");
@@ -244,19 +246,31 @@ namespace ConfigurableQuota.Patches
         {
             try
             {
-                var tod = TimeOfDay.Instance;
-                if (tod == null) return;
-
-                if (tod.quotaVariables != null)
-                    tod.quotaVariables.deadlineDaysAmount = days;
-
-                tod.daysUntilDeadline = days;
-                tod.timeUntilDeadline = days * tod.totalTime;
+                ApplyDeadline(days);
             }
             catch (Exception ex)
             {
                 Plugin.Log.LogError($"Could not apply synced deadline on client: {ex.Message}");
             }
+        }
+
+        private static void ApplyDeadline(int days)
+        {
+            var tod = TimeOfDay.Instance;
+            if (tod == null) return;
+
+            int clampedDays = Mathf.Max(1, days);
+
+            float dayDuration = tod.totalTime;
+            if (dayDuration <= 0f && tod.daysUntilDeadline > 0 && tod.timeUntilDeadline > 0f)
+                dayDuration = tod.timeUntilDeadline / tod.daysUntilDeadline;
+
+            if (tod.quotaVariables != null)
+                tod.quotaVariables.deadlineDaysAmount = clampedDays;
+
+            tod.daysUntilDeadline = clampedDays;
+            if (dayDuration > 0f)
+                tod.timeUntilDeadline = clampedDays * dayDuration;
         }
 
         #endregion

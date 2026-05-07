@@ -2,6 +2,7 @@ using System;
 using HarmonyLib;
 using Unity.Netcode;
 using UnityEngine;
+using ConfigurableQuota.Compat;
 
 namespace ConfigurableQuota.Patches
 {
@@ -33,11 +34,11 @@ namespace ConfigurableQuota.Patches
                 if (tod == null || tod.timesFulfilledQuota != 0) return;
                 if (!((NetworkBehaviour)tod).IsServer) return;
 
-                if (ConfigManager.RandomizeDeadline.Value)
-                {
-                    NetworkSync.SyncDeadlineToClients(tod.daysUntilDeadline);
-                    Plugin.Log.LogInfo($"Initial deadline synced: {tod.daysUntilDeadline} days.");
-                }
+                ConstellationDeadlineConfig.RefreshSections();
+                TimeOfDayQuotaPatch.TryApplyInitialDeadlineFromCurrentMode(tod, allowConstellationOverride: true, logSelection: true);
+
+                NetworkSync.SyncDeadlineToClients(tod.daysUntilDeadline);
+                Plugin.Log.LogInfo($"Initial deadline synced: {tod.daysUntilDeadline} days.");
             }
             catch (Exception e)
             {

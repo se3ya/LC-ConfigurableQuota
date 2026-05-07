@@ -4,6 +4,10 @@ namespace ConfigurableQuota
     {
         public const string GUID = "com.seeya.configurablequota";
         public const string PLUGIN_NAME = "Configurable Quota";
-        public const string VERSION = "1.0.0";
+        public const string VERSION = "1.1.0";
+
+        public const string LETHAL_NETWORK_API_GUID = "LethalNetworkAPI";
+        public const string LETHAL_CONSTELLATIONS_GUID = "com.github.darmuh.LethalConstellations";
+        public const string LETHAL_MOON_UNLOCKS_GUID = "com.xmods.lethalmoonunlocks";
     }
 }
