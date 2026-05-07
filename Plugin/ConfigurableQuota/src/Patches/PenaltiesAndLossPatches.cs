@@ -115,12 +115,46 @@ namespace ConfigurableQuota.Patches
         internal static int CachedRecovered;
         internal static bool HasPenaltyCache;
 
+        internal static int CachedShipScrapBeforeLoss;
+        internal static int CachedShipScrapAfterLoss;
+        internal static bool HasScrapLossSummary;
+
         internal static void CachePenaltyCounts(int dead, int total, int recovered)
         {
             CachedDead = dead;
             CachedTotal = total;
             CachedRecovered = recovered;
             HasPenaltyCache = true;
+        }
+
+        internal static void CacheScrapLossSummary(int beforeValue, int afterValue)
+        {
+            int before = Mathf.Max(0, beforeValue);
+            int after = Mathf.Clamp(afterValue, 0, before);
+
+            CachedShipScrapBeforeLoss = before;
+            CachedShipScrapAfterLoss = after;
+            HasScrapLossSummary = before > 0;
+        }
+
+        internal static void ClearScrapLossSummary()
+        {
+            CachedShipScrapBeforeLoss = 0;
+            CachedShipScrapAfterLoss = 0;
+            HasScrapLossSummary = false;
+        }
+
+        internal static bool TryGetScrapLossSummary(out int beforeValue, out int afterValue, out float lostPercent)
+        {
+            beforeValue = CachedShipScrapBeforeLoss;
+            afterValue = CachedShipScrapAfterLoss;
+            lostPercent = 0f;
+
+            if (!HasScrapLossSummary || beforeValue <= 0)
+                return false;
+
+            lostPercent = Mathf.Clamp01((beforeValue - afterValue) / (float)beforeValue);
+            return true;
         }
 
         [HarmonyPatch("DespawnPropsAtEndOfRound")]
@@ -130,6 +164,9 @@ namespace ConfigurableQuota.Patches
             try
             {
                 if (!PenaltyHelpers.IsServerSafe) return true;
+
+                HasPenaltyCache = false;
+                ClearScrapLossSummary();
 
                 bool atCompany = PenaltyHelpers.IsOnGordion();
                 var (dead, total, recovered) = PenaltyHelpers.CountDeathsAndRecovered();
@@ -153,7 +190,6 @@ namespace ConfigurableQuota.Patches
                     }
 
                     _appliedThisRound = true;
-                    Plugin.Log.LogDebug("Bypassed vanilla despawn to preserve kept items");
                     return false;
                 }
 
@@ -227,7 +263,7 @@ namespace ConfigurableQuota.Patches
             }
             catch (Exception ex)
             {
-                Plugin.Log.LogWarning($"Failed to schedule credit penalty: {ex.Message}");
+                Plugin.Log.LogWarning($"Could not schedule credit penalty: {ex.Message}");
             }
         }
 
@@ -254,7 +290,7 @@ namespace ConfigurableQuota.Patches
 
                 int before = GetCurrentCredits();
                 SetCredits(desiredFinal);
-                Plugin.Log.LogInfo($"[Penalty] Credits: {before} → {desiredFinal} (-{before - desiredFinal})");
+                Plugin.Log.LogInfo($"Credits penalty applied: {before} -> {desiredFinal} (-{before - desiredFinal}).");
             }
             finally
             {
@@ -295,7 +331,7 @@ namespace ConfigurableQuota.Patches
                 NetworkSync.SyncQuotaToClients(newQuota);
 
                 int oldQuota = tod.profitQuota - delta;
-                Plugin.Log.LogInfo($"[Penalty] Quota: {oldQuota} → {newQuota} (+{delta}, {pct:P0} penalty, {dead}/{total} dead)");
+                Plugin.Log.LogInfo($"Quota penalty applied: {oldQuota} -> {newQuota} (+{delta}, {pct:P0}, {dead}/{total} dead).");
             }
         }
 
@@ -309,7 +345,6 @@ namespace ConfigurableQuota.Patches
                 Transform? shipRoot = null;
                 try { shipRoot = StartOfRound.Instance?.shipBounds?.transform; } catch { }
 
-                int despawnedCount = 0;
                 foreach (var g in allGrab)
                 {
                     try
@@ -317,13 +352,10 @@ namespace ConfigurableQuota.Patches
                         if (!IsShipItem(g, shipRoot))
                         {
                             DespawnObject(g);
-                            despawnedCount++;
                         }
                     }
                     catch { }
                 }
-
-                Plugin.Log.LogDebug($"Despawned {despawnedCount} facility items");
             }
             catch (Exception ex)
             {
@@ -344,8 +376,7 @@ namespace ConfigurableQuota.Patches
                 var shipItems = allGrab.Where(g => IsShipItem(g, shipRoot)).ToArray();
                 var shipScrap = shipItems.Where(g => g.itemProperties.isScrap).ToArray();
                 var shipEquip = shipItems.Where(g => !g.itemProperties.isScrap && !IsBodyOrBlacklisted(g)).ToArray();
-
-                Plugin.Log.LogDebug($"Ship items: {shipScrap.Length} scrap, {shipEquip.Length} equipment");
+                int shipScrapBeforeLoss = SumScrapValue(shipScrap);
 
                 if (ConfigManager.ValueLossEnabled.Value && shipScrap.Length > 0)
                 {
@@ -361,11 +392,58 @@ namespace ConfigurableQuota.Patches
                 {
                     SelectAndRemoveEquipment(shipEquip);
                 }
+
+                int shipScrapAfterLoss = SumCurrentShipScrapValue(shipScrap, shipRoot);
+                CacheScrapLossSummary(shipScrapBeforeLoss, shipScrapAfterLoss);
+                NetworkSync.SyncScrapLossSummaryToClients(shipScrapBeforeLoss, shipScrapAfterLoss);
+
+                if (shipScrapBeforeLoss > 0)
+                {
+                    int lostValue = Mathf.Max(0, shipScrapBeforeLoss - shipScrapAfterLoss);
+                    float lossPct = Mathf.Clamp01(lostValue / (float)shipScrapBeforeLoss);
+                    Plugin.Log.LogInfo($"Scrap lost: {Mathf.RoundToInt(lossPct * 100f)}% (${lostValue}/${shipScrapBeforeLoss}).");
+                }
             }
             catch (Exception ex)
             {
-                Plugin.Log.LogWarning($"Error applying losses: {ex.Message}");
+                Plugin.Log.LogWarning($"Could not apply ship loss rules: {ex.Message}");
             }
+        }
+
+        private static int SumScrapValue(IEnumerable<GrabbableObject> items)
+        {
+            int total = 0;
+
+            foreach (var item in items)
+            {
+                try
+                {
+                    if (item?.itemProperties?.isScrap == true)
+                        total += Mathf.Max(0, item.scrapValue);
+                }
+                catch { }
+            }
+
+            return total;
+        }
+
+        private static int SumCurrentShipScrapValue(GrabbableObject[] shipScrap, Transform? shipRoot)
+        {
+            int total = 0;
+
+            foreach (var item in shipScrap)
+            {
+                try
+                {
+                    if (item?.itemProperties?.isScrap != true) continue;
+                    if (!IsShipItem(item, shipRoot)) continue;
+
+                    total += Mathf.Max(0, item.scrapValue);
+                }
+                catch { }
+            }
+
+            return total;
         }
 
         private static bool IsShipItem(GrabbableObject g, Transform? shipRoot)
@@ -436,7 +514,7 @@ namespace ConfigurableQuota.Patches
                 catch { }
             }
 
-            Plugin.Log.LogInfo($"Scrap: {removedCount}/{eligible} removed [{string.Join(", ", removedNames)}]");
+            Plugin.Log.LogInfo($"Scrap items removed: {removedCount}/{eligible} [{string.Join(", ", removedNames)}].");
         }
 
         private static void SelectAndRemoveEquipment(GrabbableObject[] equipItems)
@@ -468,7 +546,7 @@ namespace ConfigurableQuota.Patches
                 catch { }
             }
 
-            Plugin.Log.LogInfo($"[Losses] Equipment: {removedCount}/{eligible} removed [{string.Join(", ", removedNames)}]");
+            Plugin.Log.LogInfo($"Equipment items removed: {removedCount}/{eligible} [{string.Join(", ", removedNames)}].");
         }
 
         private static void ApplyValueLoss(GrabbableObject[] scrapItems)
@@ -510,14 +588,14 @@ namespace ConfigurableQuota.Patches
                 }
                 catch (Exception ex)
                 {
-                    Plugin.Log.LogWarning($"Error reducing value for item: {ex.Message}");
+                    Plugin.Log.LogWarning($"Could not reduce a scrap item's value: {ex.Message}");
                 }
             }
 
             if (syncData.Count > 0)
                 NetworkSync.SyncValueLossToClients(syncData.ToArray());
 
-            Plugin.Log.LogInfo($"Value: {affected} items reduced by {pct:P0} (${totalOldValue} → ${totalNewValue})");
+            Plugin.Log.LogInfo($"Scrap value reduced on {affected} items by {pct:P0} (${totalOldValue} -> ${totalNewValue}).");
         }
 
         private static void DespawnObject(GrabbableObject g)
@@ -548,6 +626,7 @@ namespace ConfigurableQuota.Patches
             PenaltiesOnLandingPatch._appliedThisRound = false;
             PenaltiesOnLandingPatch._lossesAppliedThisRound = false;
             PenaltiesOnLandingPatch.HasPenaltyCache = false;
+            PenaltiesOnLandingPatch.ClearScrapLossSummary();
         }
     }
 }

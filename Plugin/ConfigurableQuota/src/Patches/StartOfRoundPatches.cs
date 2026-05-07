@@ -19,12 +19,12 @@ namespace ConfigurableQuota.Patches
                 if (desired >= 0)
                 {
                     __instance.groupCredits = desired;
-                    Plugin.Log.LogInfo($"Applied starting credits: {desired}");
+                    Plugin.Log.LogInfo($"Starting credits set to {desired}.");
                 }
             }
             catch (Exception e)
             {
-                Plugin.Log.LogWarning($"Failed to apply StartingCredits: {e.Message}");
+                Plugin.Log.LogWarning($"Could not apply starting credits: {e.Message}");
             }
 
             try
@@ -36,12 +36,12 @@ namespace ConfigurableQuota.Patches
                 if (ConfigManager.RandomizeDeadline.Value)
                 {
                     NetworkSync.SyncDeadlineToClients(tod.daysUntilDeadline);
-                    Plugin.Log.LogInfo($"[Lobby] Initial deadline synced: {tod.daysUntilDeadline}d");
+                    Plugin.Log.LogInfo($"Initial deadline synced: {tod.daysUntilDeadline} days.");
                 }
             }
             catch (Exception e)
             {
-                Plugin.Log.LogWarning($"Failed to sync initial deadline: {e.Message}");
+                Plugin.Log.LogWarning($"Could not sync the initial deadline: {e.Message}");
             }
         }
     }

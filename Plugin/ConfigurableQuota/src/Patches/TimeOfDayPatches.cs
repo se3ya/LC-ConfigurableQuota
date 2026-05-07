@@ -1,7 +1,9 @@
 using System;
+using System.Linq;
 using HarmonyLib;
 using UnityEngine;
 using Unity.Netcode;
+using BepInEx.Bootstrap;
 
 namespace ConfigurableQuota.Patches
 {
@@ -41,7 +43,7 @@ namespace ConfigurableQuota.Patches
                 int overtimeBonus = (overage / 5) + (15 * daysLeftAtFulfill);
 
                 ___profitQuota = newQuota;
-                ___quotaFulfilled = CalculateRollover(overage);
+                int rollover = CalculateRollover(overage);
 
                 int deadline = SetDeadlineTimer(___totalTime, ref ___daysUntilDeadline, ref ___timeUntilDeadline, prevDays: daysLeftAtFulfill);
 
@@ -49,22 +51,22 @@ namespace ConfigurableQuota.Patches
 
                 __instance.SyncNewProfitQuotaClientRpc(___profitQuota, overtimeBonus, ___timesFulfilledQuota);
 
+                ___quotaFulfilled = rollover;
                 ___daysUntilDeadline = deadline;
                 ___timeUntilDeadline = ___totalTime * deadline;
 
                 NetworkSync.SyncDeadlineToClients(deadline);
+                if (rollover > 0)
+                    NetworkSync.SyncRolloverToClients(rollover);
 
                 Plugin.Log.LogInfo(
-                    $"[Quota #{___timesFulfilledQuota}] {previousQuota} \u2192 {newQuota}" +
-                    $" | Deadline: {deadline}d" +
-                    $" | Rollover: {___quotaFulfilled}" +
-                    $" | Overtime: {overtimeBonus}cr");
+                    $"Quota {___timesFulfilledQuota}: {previousQuota} -> {newQuota}, deadline {deadline} days, rollover {rollover}, overtime {overtimeBonus} credits.");
 
                 return false;
             }
             catch (Exception e)
             {
-                Plugin.Log.LogError($"Quota SetNewProfitQuota patch error: {e}");
+                Plugin.Log.LogError($"Could not calculate the next quota: {e.Message}");
                 return true;
             }
         }
@@ -173,14 +175,11 @@ namespace ConfigurableQuota.Patches
         [HarmonyPostfix]
         private static void TimeOfDay_Start_Postfix(TimeOfDay __instance)
         {
-            if (__instance.timesFulfilledQuota != 0) return;
-
-            if (__instance.IsServer && ConfigManager.RandomizeDeadline.Value)
-                NetworkSync.SyncDeadlineToClients(__instance.daysUntilDeadline);
-
-            // summary
-            if (true)
+            if (__instance.timesFulfilledQuota == 0)
             {
+                if (__instance.IsServer && ConfigManager.RandomizeDeadline.Value)
+                    NetworkSync.SyncDeadlineToClients(__instance.daysUntilDeadline);
+
                 string deadlineDesc = ConfigManager.RandomizeDeadline.Value
                     ? $"randomized {ConfigManager.DeadlineMin.Value}-{ConfigManager.DeadlineMax.Value}d (first: {__instance.daysUntilDeadline}d)"
                     : $"fixed {ConfigManager.DaysToDeadline.Value}d";
@@ -200,13 +199,34 @@ namespace ConfigurableQuota.Patches
                     $", equip={ConfigManager.EquipmentLossEnabled.Value}";
 
                 Plugin.Log.LogInfo(
-                    $"Quota: start={ConfigManager.StartingQuota.Value}, base+{ConfigManager.BaseIncrease.Value}/cycle, sharpness={ConfigManager.CurveSharpness.Value}{quotaCap}{finalLevel}");
-                Plugin.Log.LogInfo(
-                    $"Deadline: {deadlineDesc} | Credits start: {ConfigManager.StartingCredits.Value}");
-                Plugin.Log.LogInfo(
-                    $"Penalties: {creditPenalty} | {quotaPenalty}");
-                Plugin.Log.LogInfo(
-                    $"Losses: {losses}");
+                    $"Settings loaded: quota start {ConfigManager.StartingQuota.Value}, base +{ConfigManager.BaseIncrease.Value}/cycle, sharpness {ConfigManager.CurveSharpness.Value}{quotaCap}{finalLevel}; deadline {deadlineDesc}; credits start {ConfigManager.StartingCredits.Value}; penalties [{creditPenalty}, {quotaPenalty}]; losses [{losses}].");
+            }
+
+            if (Chainloader.PluginInfos.ContainsKey("ShaosilGaming.GeneralImprovements"))
+                __instance.StartCoroutine(GIMonitorRefreshRoutine());
+        }
+
+        private static System.Collections.IEnumerator GIMonitorRefreshRoutine()
+        {
+            yield return null;
+            TryRefreshGIMonitors();
+        }
+
+        private static void TryRefreshGIMonitors()
+        {
+            try
+            {
+                var asm = AppDomain.CurrentDomain.GetAssemblies()
+                    .FirstOrDefault(a => a.GetName().Name == "GeneralImprovements");
+                if (asm == null) return;
+
+                var helper = asm.GetType("GeneralImprovements.Utilities.MonitorsHelper");
+                helper?.GetMethod("UpdateTotalDaysMonitors")?.Invoke(null, null);
+                helper?.GetMethod("UpdateTotalQuotasMonitors")?.Invoke(null, null);
+            }
+            catch
+            {
+                // cool
             }
         }
 
@@ -233,13 +253,13 @@ namespace ConfigurableQuota.Patches
             }
             catch (Exception e)
             {
-                Plugin.Log.LogError($"Failed to apply quota variables: {e}");
+                Plugin.Log.LogError($"Could not apply quota settings at startup: {e.Message}");
             }
         }
 
         [HarmonyPatch(nameof(TimeOfDay.UpdateProfitQuotaCurrentTime))]
         [HarmonyPostfix]
-        private static void UpdateProfitQuotaCurrentTime_Postfix(TimeOfDay __instance,
+        private static void UpdateProfitQuotaCurrentTime_Postfix(
             ref float ___timeUntilDeadline,
             ref float ___totalTime,
             ref int ___daysUntilDeadline)
@@ -252,7 +272,7 @@ namespace ConfigurableQuota.Patches
 
         [HarmonyPatch(nameof(TimeOfDay.SetBuyingRateForDay))]
         [HarmonyPostfix]
-        private static void SetBuyingRateForDay_Postfix(TimeOfDay __instance,
+        private static void SetBuyingRateForDay_Postfix(
             ref float ___timeUntilDeadline,
             ref float ___totalTime,
             ref int ___daysUntilDeadline)
@@ -281,7 +301,7 @@ namespace ConfigurableQuota.Patches
             }
             catch (Exception e)
             {
-                Plugin.Log.LogWarning($"DisableQuota state update failed: {e.Message}");
+                Plugin.Log.LogWarning($"Could not update DisableQuota monitor state: {e.Message}");
             }
         }
     }

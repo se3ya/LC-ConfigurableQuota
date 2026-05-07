@@ -1,12 +1,17 @@
 using System;
+using System.Linq;
+using System.Reflection;
 using HarmonyLib;
 using UnityEngine;
+using BepInEx.Bootstrap;
 
 namespace ConfigurableQuota.Patches
 {
     [HarmonyPatch(typeof(HUDManager))]
     internal static class HudQuotaAnimationPatch
     {
+        private static bool _advancedFeaturesScrapRoutineRunning;
+
         [HarmonyPatch("rackUpNewQuotaText")]
         [HarmonyPrefix]
         private static bool RackUpNewQuotaText_Prefix(HUDManager __instance, ref System.Collections.IEnumerator __result)
@@ -34,6 +39,129 @@ namespace ConfigurableQuota.Patches
             yield return new WaitForSeconds(1.25f / Mathf.Clamp(speed, 0.5f, 2f));
             hud.displayingNewQuota = false;
             hud.reachedProfitQuotaAnimator.SetBool("display", false);
+        }
+
+        [HarmonyPatch("FillEndGameStats")]
+        [HarmonyPostfix]
+        [HarmonyAfter(new[] { "com.example.Advancedfeatures" })]
+        private static void FillEndGameStats_Postfix()
+        {
+            if (!ConfigManager.ScrapLossEnabled.Value) return;
+            if (!Chainloader.PluginInfos.ContainsKey("com.example.Advancedfeatures")) return;
+
+            try
+            {
+                var hud = HUDManager.Instance;
+                bool isAllDead = hud?.statsUIElements?.allPlayersDeadOverlay != null
+                    && hud.statsUIElements.allPlayersDeadOverlay.enabled;
+
+                var asm = AppDomain.CurrentDomain.GetAssemblies()
+                    .FirstOrDefault(a => a.GetName().Name == "AdvancedFeatures");
+                if (asm == null) return;
+
+                var endscreen = asm.GetType("AdvancedFeatures.Endscreen");
+                var areAllDeadField = endscreen?.GetField("AreAllDead",
+                    BindingFlags.Public | BindingFlags.Static);
+
+                if (isAllDead && endscreen != null)
+                {
+                    areAllDeadField?.SetValue(null, true);
+
+                    if (Plugin.Instance != null && !_advancedFeaturesScrapRoutineRunning)
+                    {
+                        Plugin.Instance.StartCoroutine(
+                            WaitAndApplyAdvancedFeaturesScrapLoss(endscreen)
+                        );
+                    }
+                    return;
+                }
+
+                if (!isAllDead)
+                    areAllDeadField?.SetValue(null, false);
+            }
+            catch (Exception e)
+            {
+                Plugin.Log.LogWarning($"Could not apply Advanced Features end screen compatibility: {e.Message}");
+            }
+        }
+
+        private static System.Collections.IEnumerator WaitAndApplyAdvancedFeaturesScrapLoss(Type endscreenType)
+        {
+            if (_advancedFeaturesScrapRoutineRunning)
+                yield break;
+
+            _advancedFeaturesScrapRoutineRunning = true;
+
+            try
+            {
+                var areAllDeadField = endscreenType.GetField("AreAllDead", BindingFlags.Public | BindingFlags.Static);
+                var containerField = endscreenType.GetField("Container", BindingFlags.NonPublic | BindingFlags.Static);
+                var scrapLostField = endscreenType.GetField("ScrapLost", BindingFlags.NonPublic | BindingFlags.Static);
+                var scrapLostTextField = endscreenType.GetField("ScrapLostText", BindingFlags.NonPublic | BindingFlags.Static);
+                var collectedTextField = endscreenType.GetField("CollectedText", BindingFlags.NonPublic | BindingFlags.Static);
+                var totalTextField = endscreenType.GetField("TotalText", BindingFlags.NonPublic | BindingFlags.Static);
+                var collectedLineField = endscreenType.GetField("CollectedLine", BindingFlags.NonPublic | BindingFlags.Static);
+                var collectedLabelField = endscreenType.GetField("CollectedLabel", BindingFlags.NonPublic | BindingFlags.Static);
+
+                bool appliedAtLeastOnce = false;
+                int lastPercent = -1;
+                int lastLost = -1;
+                int lastBefore = -1;
+                float timeout = Time.realtimeSinceStartup + 20f;
+                while (Time.realtimeSinceStartup < timeout)
+                {
+                    var container = containerField?.GetValue(null) as GameObject;
+                    bool containerActive = container != null && container.activeInHierarchy;
+
+                    if (!containerActive && appliedAtLeastOnce)
+                    {
+                        break;
+                    }
+
+                    if (!PenaltiesOnLandingPatch.TryGetScrapLossSummary(out var beforeValue, out var afterValue, out var lostPercent))
+                    {
+                        yield return null;
+                        continue;
+                    }
+
+                    int lostValue = Mathf.Max(0, beforeValue - afterValue);
+                    string displayText = $"Lost {Mathf.RoundToInt(Mathf.Clamp01(lostPercent) * 100f)}% scrap (${lostValue}/{beforeValue})";
+
+                    areAllDeadField?.SetValue(null, true);
+
+                    var scrapLostTransform = scrapLostField?.GetValue(null) as Transform;
+                    var collectedLineTransform = collectedLineField?.GetValue(null) as Transform;
+                    var collectedLabelTransform = collectedLabelField?.GetValue(null) as Transform;
+                    var collectedText = collectedTextField?.GetValue(null) as Component;
+                    var totalText = totalTextField?.GetValue(null) as Component;
+                    object? scrapLostText = scrapLostTextField?.GetValue(null);
+                    var textProperty = scrapLostText?.GetType().GetProperty("text");
+
+                    if (collectedText != null) collectedText.gameObject.SetActive(false);
+                    if (totalText != null) totalText.gameObject.SetActive(false);
+                    if (collectedLineTransform != null) collectedLineTransform.gameObject.SetActive(false);
+                    if (collectedLabelTransform != null) collectedLabelTransform.gameObject.SetActive(false);
+                    if (scrapLostTransform != null) scrapLostTransform.gameObject.SetActive(true);
+
+                    textProperty?.SetValue(scrapLostText, displayText);
+
+                    appliedAtLeastOnce = true;
+                    int percentRounded = Mathf.RoundToInt(lostPercent * 100f);
+                    if (percentRounded != lastPercent || lostValue != lastLost || beforeValue != lastBefore)
+                    {
+                        lastPercent = percentRounded;
+                        lastLost = lostValue;
+                        lastBefore = beforeValue;
+                        Plugin.Log.LogInfo($"Updated Advanced Features scrap-loss text: {percentRounded}% (${lostValue}/{beforeValue}).");
+                    }
+
+                    yield return null;
+                }
+            }
+            finally
+            {
+                _advancedFeaturesScrapRoutineRunning = false;
+            }
         }
 
         [HarmonyPatch("ApplyPenalty")]
@@ -125,7 +253,7 @@ namespace ConfigurableQuota.Patches
             }
             catch (Exception e)
             {
-                Plugin.Log.LogWarning($"ApplyPenalty display patch failed: {e.Message}");
+                Plugin.Log.LogWarning($"Could not update penalty text on the end screen: {e.Message}");
             }
         }
     }
