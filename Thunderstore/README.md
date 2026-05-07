@@ -1,6 +1,6 @@
 <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px;">
   <img src="https://img.shields.io/codefactor/grade/github/se3ya/LC-ConfigurableQuota?style=flat&logo=codefactor&logoColor=white&color=83E6FB&cacheSeconds=1200" alt="CodeFactor Grade">
-  <img src="https://img.shields.io/thunderstore/dt/seechela/ConfigurableQuota?style=flat&logo=thunderstore&logoColor=white&color=83E6FB&cacheSeconds=1200" alt="Thunderstore Downloads">
+  <img src="https://img.shields.io/thunderstore/dt/seechela/Configurable_Quota?style=flat&logo=thunderstore&logoColor=white&color=83E6FB&cacheSeconds=1200" alt="Thunderstore Downloads">
   <img src="https://img.shields.io/github/v/release/se3ya/LC-ConfigurableQuota?style=flat&logo=github&logoColor=white&color=83E6FB&cacheSeconds=1200" alt="GitHub Release Version">
   </div>
 <br><br>
