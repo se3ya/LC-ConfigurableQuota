@@ -103,7 +103,7 @@ namespace ConfigurableQuota.Compat
         private static bool EnsureReflectionReady()
         {
             if (_collectionsType != null && _currentConstellationField != null && _constellationStuffField != null)
-                return _collectionsType != null && _currentConstellationField != null && _constellationStuffField != null;
+                return true;
 
             try
             {

@@ -43,7 +43,7 @@ namespace ConfigurableQuota.Patches
         [HarmonyPatch(nameof(TimeOfDay.SetNewProfitQuota))]
         [HarmonyPrefix]
         [HarmonyPriority(Priority.Low)]
-        [HarmonyAfter(new[] { "Jade.ChocoQuota", "luciusoflegend.lethalcompany.quotaoverhaul", Metadata.LETHAL_MOON_UNLOCKS_GUID })]
+        [HarmonyAfter(new[] { Metadata.LETHAL_MOON_UNLOCKS_GUID })]
         private static bool SetNewProfitQuota_Prefix(TimeOfDay __instance,
             ref int ___timesFulfilledQuota,
             ref int ___profitQuota,
@@ -411,8 +411,11 @@ namespace ConfigurableQuota.Patches
 
             int d = UnityEngine.Random.Range(min, max + 1);
 
-            if (ConfigManager.DeadlineMustChange.Value && d == prevDays && min != max)
-                d = UnityEngine.Random.Range(min, max + 1);
+            if (ConfigManager.DeadlineMustChange.Value && min != max)
+            {
+                for (int attempt = 0; attempt < 8 && d == prevDays; attempt++)
+                    d = UnityEngine.Random.Range(min, max + 1);
+            }
 
             return d;
         }

@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Starter constellation now shows the right deadline from the start
+- _Advance Features_ - Scrap loss text on the performance report UI no longer flickers and is hidden when there was no scrap to lose
 
 ## [1.1.0] - 2026-05-07
 

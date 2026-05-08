@@ -118,6 +118,7 @@ namespace ConfigurableQuota.Patches
         internal static int CachedShipScrapBeforeLoss;
         internal static int CachedShipScrapAfterLoss;
         internal static bool HasScrapLossSummary;
+        internal static bool HasAllDeadSnapshot;
 
         internal static void CachePenaltyCounts(int dead, int total, int recovered)
         {
@@ -166,6 +167,7 @@ namespace ConfigurableQuota.Patches
                 if (!PenaltyHelpers.IsServerSafe) return true;
 
                 HasPenaltyCache = false;
+                HasAllDeadSnapshot = false;
                 ClearScrapLossSummary();
 
                 bool atCompany = PenaltyHelpers.IsOnGordion();
@@ -177,8 +179,11 @@ namespace ConfigurableQuota.Patches
 
                     ApplyLossesWhenAllDead();
                     _lossesAppliedThisRound = true;
+                    HasAllDeadSnapshot = true;
 
                     CachePenaltyCounts(dead, total, recovered);
+
+                    HudQuotaAnimationPatch.TryApplyAdvancedFeaturesEndscreen();
 
                     if (ConfigManager.CreditPenaltiesEnabled.Value)
                     {
@@ -274,7 +279,10 @@ namespace ConfigurableQuota.Patches
                 var term = UnityEngine.Object.FindObjectOfType<Terminal>();
                 if (term != null) return term.groupCredits;
             }
-            catch { }
+            catch (Exception ex)
+            {
+                Plugin.Log.LogDebug($"Could not read current credits: {ex.Message}");
+            }
 
             return 0;
         }
@@ -306,7 +314,10 @@ namespace ConfigurableQuota.Patches
                 if (term != null)
                     term.SyncGroupCreditsServerRpc(value, term.numberOfItemsInDropship);
             }
-            catch { }
+            catch (Exception ex)
+            {
+                Plugin.Log.LogDebug($"Could not sync credits to terminal: {ex.Message}");
+            }
         }
 
         private static void ApplyQuotaPenalty(int dead, int total, int recovered)
@@ -324,13 +335,13 @@ namespace ConfigurableQuota.Patches
             var tod = TimeOfDay.Instance;
             if (tod != null)
             {
-                int delta = Mathf.RoundToInt(Math.Max(1, tod.profitQuota) * pct);
-                int newQuota = Mathf.Max(1, tod.profitQuota + delta);
+                int oldQuota = tod.profitQuota;
+                int delta = Mathf.RoundToInt(Math.Max(1, oldQuota) * pct);
+                int newQuota = Mathf.Max(1, oldQuota + delta);
                 tod.profitQuota = newQuota;
 
                 NetworkSync.SyncQuotaToClients(newQuota);
 
-                int oldQuota = tod.profitQuota - delta;
                 Plugin.Log.LogInfo($"Quota penalty applied: {oldQuota} -> {newQuota} (+{delta}, {pct:P0}, {dead}/{total} dead).");
             }
         }
@@ -342,19 +353,19 @@ namespace ConfigurableQuota.Patches
                 var allGrab = UnityEngine.Object.FindObjectsOfType<GrabbableObject>();
                 if (allGrab == null || allGrab.Length == 0) return;
 
-                Transform? shipRoot = null;
-                try { shipRoot = StartOfRound.Instance?.shipBounds?.transform; } catch { }
-
                 foreach (var g in allGrab)
                 {
                     try
                     {
-                        if (!IsShipItem(g, shipRoot))
+                        if (!IsShipItem(g))
                         {
                             DespawnObject(g);
                         }
                     }
-                    catch { }
+                    catch (Exception ex)
+                    {
+                        Plugin.Log.LogDebug($"Skipped despawn check for facility item: {ex.Message}");
+                    }
                 }
             }
             catch (Exception ex)
@@ -370,10 +381,7 @@ namespace ConfigurableQuota.Patches
                 var allGrab = UnityEngine.Object.FindObjectsOfType<GrabbableObject>();
                 if (allGrab == null || allGrab.Length == 0) return;
 
-                Transform? shipRoot = null;
-                try { shipRoot = StartOfRound.Instance?.shipBounds?.transform; } catch { }
-
-                var shipItems = allGrab.Where(g => IsShipItem(g, shipRoot)).ToArray();
+                var shipItems = allGrab.Where(IsShipItem).ToArray();
                 var shipScrap = shipItems.Where(g => g.itemProperties.isScrap).ToArray();
                 var shipEquip = shipItems.Where(g => !g.itemProperties.isScrap && !IsBodyOrBlacklisted(g)).ToArray();
                 int shipScrapBeforeLoss = SumScrapValue(shipScrap);
@@ -393,7 +401,7 @@ namespace ConfigurableQuota.Patches
                     SelectAndRemoveEquipment(shipEquip);
                 }
 
-                int shipScrapAfterLoss = SumCurrentShipScrapValue(shipScrap, shipRoot);
+                int shipScrapAfterLoss = SumCurrentShipScrapValue(shipScrap);
                 CacheScrapLossSummary(shipScrapBeforeLoss, shipScrapAfterLoss);
                 NetworkSync.SyncScrapLossSummaryToClients(shipScrapBeforeLoss, shipScrapAfterLoss);
 
@@ -421,13 +429,16 @@ namespace ConfigurableQuota.Patches
                     if (item?.itemProperties?.isScrap == true)
                         total += Mathf.Max(0, item.scrapValue);
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    Plugin.Log.LogDebug($"Skipped scrap value sum for item: {ex.Message}");
+                }
             }
 
             return total;
         }
 
-        private static int SumCurrentShipScrapValue(GrabbableObject[] shipScrap, Transform? shipRoot)
+        private static int SumCurrentShipScrapValue(GrabbableObject[] shipScrap)
         {
             int total = 0;
 
@@ -436,36 +447,29 @@ namespace ConfigurableQuota.Patches
                 try
                 {
                     if (item?.itemProperties?.isScrap != true) continue;
-                    if (!IsShipItem(item, shipRoot)) continue;
+                    if (!IsShipItem(item)) continue;
 
                     total += Mathf.Max(0, item.scrapValue);
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    Plugin.Log.LogDebug($"Skipped scrap value sum for item: {ex.Message}");
+                }
             }
 
             return total;
         }
 
-        private static bool IsShipItem(GrabbableObject g, Transform? shipRoot)
+        private static bool IsShipItem(GrabbableObject g)
         {
             if (g == null || g.itemProperties == null || !g.isInShipRoom) return false;
 
             try
             {
                 var no = g.GetComponent<NetworkObject>();
-                if (no == null || !no.IsSpawned) return false;
+                return no != null && no.IsSpawned;
             }
             catch { return false; }
-
-            if (shipRoot == null) return true;
-
-            var t = g.transform;
-            for (int depth = 0; depth < 8 && t != null; depth++)
-            {
-                if (t == shipRoot) return true;
-                t = t.parent;
-            }
-            return true;
         }
 
         private static bool IsBodyOrBlacklisted(GrabbableObject g)
@@ -511,7 +515,10 @@ namespace ConfigurableQuota.Patches
                         removedNames.Add(g.itemProperties.itemName);
                     }
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    Plugin.Log.LogDebug($"Skipped scrap removal for item: {ex.Message}");
+                }
             }
 
             Plugin.Log.LogInfo($"Scrap items removed: {removedCount}/{eligible} [{string.Join(", ", removedNames)}].");
@@ -543,7 +550,10 @@ namespace ConfigurableQuota.Patches
                         removedNames.Add(g.itemProperties.itemName);
                     }
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    Plugin.Log.LogDebug($"Skipped equipment removal for item: {ex.Message}");
+                }
             }
 
             Plugin.Log.LogInfo($"Equipment items removed: {removedCount}/{eligible} [{string.Join(", ", removedNames)}].");
@@ -575,7 +585,10 @@ namespace ConfigurableQuota.Patches
                         {
                             g.SetScrapValue(newValue);
                         }
-                        catch { }
+                        catch (Exception ex)
+                        {
+                            Plugin.Log.LogDebug($"SetScrapValue failed: {ex.Message}");
+                        }
 
                         var netObj = g.GetComponent<Unity.Netcode.NetworkObject>();
                         if (netObj != null)
@@ -612,7 +625,10 @@ namespace ConfigurableQuota.Patches
                     UnityEngine.Object.Destroy(g.gameObject);
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                Plugin.Log.LogDebug($"Could not despawn object: {ex.Message}");
+            }
         }
     }
 
@@ -626,6 +642,7 @@ namespace ConfigurableQuota.Patches
             PenaltiesOnLandingPatch._appliedThisRound = false;
             PenaltiesOnLandingPatch._lossesAppliedThisRound = false;
             PenaltiesOnLandingPatch.HasPenaltyCache = false;
+            PenaltiesOnLandingPatch.HasAllDeadSnapshot = false;
             PenaltiesOnLandingPatch.ClearScrapLossSummary();
         }
     }

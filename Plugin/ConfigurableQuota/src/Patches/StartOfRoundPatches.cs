@@ -1,8 +1,5 @@
 using System;
 using HarmonyLib;
-using Unity.Netcode;
-using UnityEngine;
-using ConfigurableQuota.Compat;
 
 namespace ConfigurableQuota.Patches
 {
@@ -26,26 +23,6 @@ namespace ConfigurableQuota.Patches
             catch (Exception e)
             {
                 Plugin.Log.LogWarning($"Could not apply starting credits: {e.Message}");
-            }
-
-            try
-            {
-                if (LethalConstellationsCompat.IsInstalled)
-                    return;
-
-                var tod = TimeOfDay.Instance;
-                if (tod == null || tod.timesFulfilledQuota != 0) return;
-                if (!((NetworkBehaviour)tod).IsServer) return;
-
-                ConstellationDeadlineConfig.RefreshSections();
-                TimeOfDayQuotaPatch.TryApplyInitialDeadlineFromCurrentMode(tod, allowConstellationOverride: true, logSelection: true);
-
-                NetworkSync.SyncDeadlineToClients(tod.daysUntilDeadline);
-                Plugin.Log.LogInfo($"Initial deadline synced: {tod.daysUntilDeadline} days.");
-            }
-            catch (Exception e)
-            {
-                Plugin.Log.LogWarning($"Could not sync the initial deadline: {e.Message}");
             }
         }
     }
