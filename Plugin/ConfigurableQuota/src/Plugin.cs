@@ -10,6 +10,7 @@ namespace ConfigurableQuota
   [BepInDependency(Metadata.LETHAL_NETWORK_API_GUID)]
   [BepInDependency(Metadata.LETHAL_CONSTELLATIONS_GUID, BepInDependency.DependencyFlags.SoftDependency)]
   [BepInDependency(Metadata.LETHAL_MOON_UNLOCKS_GUID, BepInDependency.DependencyFlags.SoftDependency)]
+  [BepInDependency(Metadata.OPEN_LIB_GUID, BepInDependency.DependencyFlags.SoftDependency)]
   public class Plugin : BaseUnityPlugin
   {
     private readonly Harmony _harmony = new(Metadata.GUID);
@@ -31,6 +32,8 @@ namespace ConfigurableQuota
       NetworkSync.Initialize();
 
       _harmony.PatchAll();
+
+      OpenLibEventBridge.TrySubscribe();
 
       Log.LogInfo($"{Metadata.PLUGIN_NAME} is loaded!");
     }

@@ -242,10 +242,10 @@ namespace ConfigurableQuota.Patches
         private static System.Collections.IEnumerator GIMonitorRefreshRoutine()
         {
             yield return null;
-            TryRefreshGIMonitors();
+            RefreshExternalMonitors();
         }
 
-        private static void TryRefreshGIMonitors()
+        internal static void RefreshExternalMonitors()
         {
             try
             {
@@ -282,13 +282,13 @@ namespace ConfigurableQuota.Patches
             }
         }
 
-        internal static void TryApplyInitialDeadlineFromCurrentMode(
+        internal static bool TryApplyInitialDeadlineFromCurrentMode(
             TimeOfDay instance,
             bool allowConstellationOverride,
             bool logSelection)
         {
             if (instance == null || instance.timesFulfilledQuota != 0)
-                return;
+                return false;
 
             DeadlineSelection selection = ResolveDeadlineSelection(prevDays: -1);
 
@@ -301,7 +301,7 @@ namespace ConfigurableQuota.Patches
             }
 
             if (!shouldApply)
-                return;
+                return false;
 
             int deadlineDays = selection.Days;
 
@@ -318,6 +318,8 @@ namespace ConfigurableQuota.Patches
 
             if (logSelection)
                 Plugin.Log.LogInfo($"Initial deadline selected ({selection.Source}): {deadlineDays} day(s).");
+
+            return true;
         }
 
         private static DeadlineSelection ResolveDeadlineSelection(int prevDays)

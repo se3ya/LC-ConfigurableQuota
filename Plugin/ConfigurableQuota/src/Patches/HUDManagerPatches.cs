@@ -174,87 +174,79 @@ namespace ConfigurableQuota.Patches
         {
             try
             {
-                int dead, total, recovered;
-                if (PenaltiesOnLandingPatch.HasPenaltyCache)
-                {
-                    dead = PenaltiesOnLandingPatch.CachedDead;
-                    total = PenaltiesOnLandingPatch.CachedTotal;
-                    recovered = PenaltiesOnLandingPatch.CachedRecovered;
-                }
-                else
-                {
-                    (dead, total, recovered) = PenaltyHelpers.CountDeathsAndRecovered();
-                    if (dead == 0 && playersDead > 0)
-                    {
-                        dead = playersDead;
-                        recovered = bodiesInsured;
-                        total = Mathf.Max(dead + 1, total);
-                    }
-                }
-
+                var (dead, total, recovered) = ResolvePenaltyCounts(playersDead, bodiesInsured);
                 bool atCompany = PenaltyHelpers.IsOnGordion();
 
-                // credit penalty
-                float creditPct = 0f;
-                int creditLoss = 0;
-                bool creditActive = ConfigManager.CreditPenaltiesEnabled.Value
-                    && dead > 0
-                    && (!atCompany || ConfigManager.CreditPenaltiesOnGordion.Value);
+                var (creditPct, creditLoss) = ComputeCreditPenalty(dead, total, recovered, atCompany);
+                var (quotaPct, quotaDelta) = ComputeQuotaPenalty(dead, total, recovered, atCompany);
 
-                if (creditActive)
-                {
-                    var term = UnityEngine.Object.FindObjectOfType<Terminal>();
-                    int credits = term?.groupCredits ?? 0;
-                    creditPct = PenaltyHelpers.ComputePenaltyPercent(
-                        ConfigManager.CreditPenaltiesDynamic.Value,
-                        ConfigManager.CreditPenaltyPercentPerPlayer.Value,
-                        ConfigManager.CreditPenaltyPercentCap.Value,
-                        ConfigManager.CreditPenaltyPercentThreshold.Value,
-                        ConfigManager.CreditPenaltyRecoveryBonus.Value,
-                        dead, total, recovered);
-                    creditLoss = Mathf.RoundToInt(credits * creditPct);
-                }
-
-                // quota penalty
-                float quotaPct = 0f;
-                int quotaDelta = 0;
-                bool quotaActive = ConfigManager.QuotaPenaltiesEnabled.Value
-                    && dead > 0
-                    && (!atCompany || ConfigManager.QuotaPenaltiesOnGordion.Value);
-
-                if (quotaActive)
-                {
-                    quotaPct = PenaltyHelpers.ComputePenaltyPercent(
-                        ConfigManager.QuotaPenaltiesDynamic.Value,
-                        ConfigManager.QuotaPenaltyPercentPerPlayer.Value,
-                        ConfigManager.QuotaPenaltyPercentCap.Value,
-                        ConfigManager.QuotaPenaltyPercentThreshold.Value,
-                        ConfigManager.QuotaPenaltyRecoveryBonus.Value,
-                        dead, total, recovered);
-                    var tod = TimeOfDay.Instance;
-                    if (tod != null)
-                        quotaDelta = Mathf.RoundToInt(Mathf.Max(1, tod.profitQuota) * quotaPct);
-                }
-
-                string line1 = creditPct > 0f
-                    ? $"{dead} casualties: -{Mathf.RoundToInt(creditPct * 100)}%"
-                    : $"{dead} casualties";
-                string line2 = $"({recovered} of {dead} bodies recovered.)";
-                string text = line1 + "\n" + line2;
-
-                if (quotaPct > 0f)
-                    text += $"\n\nQuota: {Mathf.RoundToInt(quotaPct * 100)}% (${quotaDelta})";
-
-                __instance.statsUIElements.penaltyAddition.text = text;
-
-                __instance.statsUIElements.penaltyTotal.text = creditLoss > 0
-                    ? $"DUE: ${creditLoss}"
-                    : "";
+                __instance.statsUIElements.penaltyAddition.text = BuildPenaltyText(dead, recovered, creditPct, quotaPct, quotaDelta);
+                __instance.statsUIElements.penaltyTotal.text = creditLoss > 0 ? $"DUE: ${creditLoss}" : "";
             }
             catch (Exception e)
             {
                 Plugin.Log.LogWarning($"Could not update penalty text on the end screen: {e.Message}");
             }
+        }
+
+        private static (int dead, int total, int recovered) ResolvePenaltyCounts(int playersDead, int bodiesInsured)
+        {
+            if (PenaltiesOnLandingPatch.HasPenaltyCache)
+                return (PenaltiesOnLandingPatch.CachedDead, PenaltiesOnLandingPatch.CachedTotal, PenaltiesOnLandingPatch.CachedRecovered);
+
+            var (dead, total, recovered) = PenaltyHelpers.CountDeathsAndRecovered();
+            if (dead == 0 && playersDead > 0)
+            {
+                dead = playersDead;
+                recovered = bodiesInsured;
+                total = Mathf.Max(dead + 1, total);
+            }
+            return (dead, total, recovered);
+        }
+
+        private static (float pct, int loss) ComputeCreditPenalty(int dead, int total, int recovered, bool atCompany)
+        {
+            if (!ConfigManager.CreditPenaltiesEnabled.Value || dead == 0 || (atCompany && !ConfigManager.CreditPenaltiesOnGordion.Value))
+                return (0f, 0);
+
+            var term = UnityEngine.Object.FindObjectOfType<Terminal>();
+            int credits = term?.groupCredits ?? 0;
+            float pct = PenaltyHelpers.ComputePenaltyPercent(
+                ConfigManager.CreditPenaltiesDynamic.Value,
+                ConfigManager.CreditPenaltyPercentPerPlayer.Value,
+                ConfigManager.CreditPenaltyPercentCap.Value,
+                ConfigManager.CreditPenaltyPercentThreshold.Value,
+                ConfigManager.CreditPenaltyRecoveryBonus.Value,
+                dead, total, recovered);
+            return (pct, Mathf.RoundToInt(credits * pct));
+        }
+
+        private static (float pct, int delta) ComputeQuotaPenalty(int dead, int total, int recovered, bool atCompany)
+        {
+            if (!ConfigManager.QuotaPenaltiesEnabled.Value || dead == 0 || (atCompany && !ConfigManager.QuotaPenaltiesOnGordion.Value))
+                return (0f, 0);
+
+            float pct = PenaltyHelpers.ComputePenaltyPercent(
+                ConfigManager.QuotaPenaltiesDynamic.Value,
+                ConfigManager.QuotaPenaltyPercentPerPlayer.Value,
+                ConfigManager.QuotaPenaltyPercentCap.Value,
+                ConfigManager.QuotaPenaltyPercentThreshold.Value,
+                ConfigManager.QuotaPenaltyRecoveryBonus.Value,
+                dead, total, recovered);
+            var tod = TimeOfDay.Instance;
+            int delta = tod != null ? Mathf.RoundToInt(Mathf.Max(1, tod.profitQuota) * pct) : 0;
+            return (pct, delta);
+        }
+
+        private static string BuildPenaltyText(int dead, int recovered, float creditPct, float quotaPct, int quotaDelta)
+        {
+            string line1 = creditPct > 0f
+                ? $"{dead} casualties: -{Mathf.RoundToInt(creditPct * 100)}%"
+                : $"{dead} casualties";
+            string text = line1 + $"\n({recovered} of {dead} bodies recovered.)";
+            if (quotaPct > 0f)
+                text += $"\n\nQuota: {Mathf.RoundToInt(quotaPct * 100)}% (${quotaDelta})";
+            return text;
         }
     }
 }

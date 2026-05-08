@@ -9,5 +9,6 @@ namespace ConfigurableQuota
         public const string LETHAL_NETWORK_API_GUID = "LethalNetworkAPI";
         public const string LETHAL_CONSTELLATIONS_GUID = "com.github.darmuh.LethalConstellations";
         public const string LETHAL_MOON_UNLOCKS_GUID = "com.xmods.lethalmoonunlocks";
+        public const string OPEN_LIB_GUID = "darmuh.OpenLib";
     }
 }

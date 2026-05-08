@@ -30,6 +30,9 @@ namespace ConfigurableQuota.Patches
 
             try
             {
+                if (LethalConstellationsCompat.IsInstalled)
+                    return;
+
                 var tod = TimeOfDay.Instance;
                 if (tod == null || tod.timesFulfilledQuota != 0) return;
                 if (!((NetworkBehaviour)tod).IsServer) return;
