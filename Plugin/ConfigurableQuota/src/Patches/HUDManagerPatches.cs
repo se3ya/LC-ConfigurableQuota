@@ -80,7 +80,6 @@ namespace ConfigurableQuota.Patches
 
         private static void ApplyAdvancedFeaturesEndscreen(Type endscreenType)
         {
-
             var areAllDeadField = AccessTools.Field(endscreenType, "AreAllDead");
             var scrapLostField = AccessTools.Field(endscreenType, "ScrapLost");
             var scrapLostTextField = AccessTools.Field(endscreenType, "ScrapLostText");
@@ -191,8 +190,13 @@ namespace ConfigurableQuota.Patches
                 ConfigManager.QuotaPenaltyPercentThreshold.Value,
                 ConfigManager.QuotaPenaltyRecoveryBonus.Value,
                 dead, total, recovered);
-            var tod = TimeOfDay.Instance;
-            int delta = tod != null ? Mathf.RoundToInt(Mathf.Max(1, tod.profitQuota) * pct) : 0;
+
+            int delta = PenaltiesOnLandingPatch.CachedQuotaPenaltyDelta;
+            if (delta <= 0)
+            {
+                var tod = TimeOfDay.Instance;
+                delta = tod != null ? Mathf.RoundToInt(Mathf.Max(1, tod.profitQuota) * pct) : 0;
+            }
             return (pct, delta);
         }
 

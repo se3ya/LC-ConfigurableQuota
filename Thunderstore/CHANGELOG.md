@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-05-09
+
+### Added
+
+- Buy rate settings - set a min/max, random rate, last-day rate or jackpot for the Companys daily buy rate
+- Buy rate alert that shows the new rate each day, plus a red SCRAP EMERGENCY alert with sound when a jackpot rolls
+- Formulas and examples to the README and to every config setting
+
+### Changed
+
+- Dynamic penalty mode now uses `(dead/total) x PercentCap` so the cap acts as the scale instead of a cap. Example: 2 dead out of 8 with cap 0.05 used to give 5%, now gives 1.25%
+
+### Fixed
+
+- Fines UI quota line now shows the real amount of the penalty
+
 ## [1.1.1] - 2026-05-08
 
 ### Fixed

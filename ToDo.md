@@ -10,3 +10,4 @@
   - Enemy power threshold weight
   - Multiplier for min scrap value
   - Multiplier for max scrap value
+- Credits player multiplier

@@ -7,11 +7,12 @@ namespace ConfigurableQuota.Patches
     internal static class NetworkSync
     {
         private static LNetworkMessage<int>? _syncCreditsMessage;
-        private static LNetworkMessage<int>? _syncQuotaMessage;
+        private static LNetworkMessage<SyncQuotaData>? _syncQuotaMessage;
         private static LNetworkMessage<SyncValueLossData>? _syncValueLossMessage;
         private static LNetworkMessage<int>? _syncDeadlineMessage;
         private static LNetworkMessage<int>? _syncRolloverMessage;
         private static LNetworkMessage<SyncScrapLossSummary>? _syncScrapLossSummaryMessage;
+        private static LNetworkMessage<SyncBuyingRateData>? _syncBuyingRateMessage;
 
         public static void Initialize()
         {
@@ -22,7 +23,7 @@ namespace ConfigurableQuota.Patches
                     onClientReceived: OnCreditsReceived
                 );
 
-                _syncQuotaMessage = LNetworkMessage<int>.Connect(
+                _syncQuotaMessage = LNetworkMessage<SyncQuotaData>.Connect(
                     "ConfigurableQuota_SyncQuota",
                     onClientReceived: OnQuotaReceived
                 );
@@ -45,6 +46,11 @@ namespace ConfigurableQuota.Patches
                 _syncScrapLossSummaryMessage = LNetworkMessage<SyncScrapLossSummary>.Connect(
                     "ConfigurableQuota_SyncScrapLossSummary",
                     onClientReceived: OnScrapLossSummaryReceived
+                );
+
+                _syncBuyingRateMessage = LNetworkMessage<SyncBuyingRateData>.Connect(
+                    "ConfigurableQuota_SyncBuyingRate",
+                    onClientReceived: OnBuyingRateReceived
                 );
 
                 Plugin.Log.LogInfo("Network sync is ready.");
@@ -133,7 +139,7 @@ namespace ConfigurableQuota.Patches
 
         #region Quota Sync
 
-        public static void SyncQuotaToClients(int quota)
+        public static void SyncQuotaToClients(int quota, int penaltyDelta = 0)
         {
             try
             {
@@ -143,7 +149,7 @@ namespace ConfigurableQuota.Patches
                     return;
                 }
 
-                _syncQuotaMessage.SendClients(quota);
+                _syncQuotaMessage.SendClients(new SyncQuotaData(quota, penaltyDelta));
             }
             catch (Exception ex)
             {
@@ -151,15 +157,16 @@ namespace ConfigurableQuota.Patches
             }
         }
 
-        private static void OnQuotaReceived(int quota)
+        private static void OnQuotaReceived(SyncQuotaData data)
         {
             try
             {
                 var tod = TimeOfDay.Instance;
                 if (tod != null)
                 {
-                    tod.profitQuota = quota;
+                    tod.profitQuota = data.Quota;
                 }
+                PenaltiesOnLandingPatch.CachedQuotaPenaltyDelta = data.PenaltyDelta;
             }
             catch (Exception ex)
             {
@@ -312,6 +319,66 @@ namespace ConfigurableQuota.Patches
         }
 
         #endregion
+
+        #region Buying Rate Sync
+
+        public static void SyncBuyingRateToClients(float rate, bool isJackpot)
+        {
+            try
+            {
+                if (_syncBuyingRateMessage == null)
+                {
+                    Plugin.Log.LogWarning("Buying rate message not initialized");
+                    return;
+                }
+
+                _syncBuyingRateMessage.SendClients(new SyncBuyingRateData(rate, isJackpot));
+            }
+            catch (Exception ex)
+            {
+                Plugin.Log.LogError($"Could not sync buying rate: {ex.Message}");
+            }
+        }
+
+        private static void OnBuyingRateReceived(SyncBuyingRateData data)
+        {
+            try
+            {
+                BuyingRatePatch.ApplyReceivedBuyingRate(data.Rate, data.IsJackpot);
+            }
+            catch (Exception ex)
+            {
+                Plugin.Log.LogError($"Could not apply synced buying rate on client: {ex.Message}");
+            }
+        }
+
+        #endregion
+    }
+
+    [Serializable]
+    public struct SyncQuotaData
+    {
+        public int Quota;
+        public int PenaltyDelta;
+
+        public SyncQuotaData(int quota, int penaltyDelta)
+        {
+            Quota = quota;
+            PenaltyDelta = penaltyDelta;
+        }
+    }
+
+    [Serializable]
+    public struct SyncBuyingRateData
+    {
+        public float Rate;
+        public bool IsJackpot;
+
+        public SyncBuyingRateData(float rate, bool isJackpot)
+        {
+            Rate = rate;
+            IsJackpot = isJackpot;
+        }
     }
 
     [Serializable]

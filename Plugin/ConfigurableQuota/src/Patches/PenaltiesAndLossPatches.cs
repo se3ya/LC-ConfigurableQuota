@@ -90,7 +90,11 @@ namespace ConfigurableQuota.Patches
         {
             if (dead <= 0 || total <= 0) return 0f;
 
-            float pct = dynamicMode ? (float)dead / total : dead * Mathf.Max(0f, percentPerPlayer);
+            float clampedCap = cap >= 0f ? Mathf.Clamp01(cap) : 1f;
+
+            float pct = dynamicMode
+                ? ((float)dead / total) * clampedCap
+                : dead * Mathf.Max(0f, percentPerPlayer);
 
             if (recovered > 0 && dead > 0)
             {
@@ -98,7 +102,7 @@ namespace ConfigurableQuota.Patches
                 pct *= Mathf.Clamp01(1f - (Mathf.Clamp01(recoveryBonus) * recoveredRatio));
             }
 
-            if (cap >= 0f) pct = Mathf.Min(pct, Mathf.Clamp01(cap));
+            if (!dynamicMode && cap >= 0f) pct = Mathf.Min(pct, clampedCap);
             return pct < threshold ? 0f : Mathf.Clamp01(pct);
         }
     }
@@ -114,6 +118,7 @@ namespace ConfigurableQuota.Patches
         internal static int CachedTotal;
         internal static int CachedRecovered;
         internal static bool HasPenaltyCache;
+        internal static int CachedQuotaPenaltyDelta;
 
         internal static int CachedShipScrapBeforeLoss;
         internal static int CachedShipScrapAfterLoss;
@@ -168,6 +173,7 @@ namespace ConfigurableQuota.Patches
 
                 HasPenaltyCache = false;
                 HasAllDeadSnapshot = false;
+                CachedQuotaPenaltyDelta = 0;
                 ClearScrapLossSummary();
 
                 bool atCompany = PenaltyHelpers.IsOnGordion();
@@ -338,9 +344,10 @@ namespace ConfigurableQuota.Patches
                 int oldQuota = tod.profitQuota;
                 int delta = Mathf.RoundToInt(Math.Max(1, oldQuota) * pct);
                 int newQuota = Mathf.Max(1, oldQuota + delta);
+                CachedQuotaPenaltyDelta = delta;
                 tod.profitQuota = newQuota;
 
-                NetworkSync.SyncQuotaToClients(newQuota);
+                NetworkSync.SyncQuotaToClients(newQuota, delta);
 
                 Plugin.Log.LogInfo($"Quota penalty applied: {oldQuota} -> {newQuota} (+{delta}, {pct:P0}, {dead}/{total} dead).");
             }
@@ -643,6 +650,7 @@ namespace ConfigurableQuota.Patches
             PenaltiesOnLandingPatch._lossesAppliedThisRound = false;
             PenaltiesOnLandingPatch.HasPenaltyCache = false;
             PenaltiesOnLandingPatch.HasAllDeadSnapshot = false;
+            PenaltiesOnLandingPatch.CachedQuotaPenaltyDelta = 0;
             PenaltiesOnLandingPatch.ClearScrapLossSummary();
         }
     }

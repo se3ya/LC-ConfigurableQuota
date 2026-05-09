@@ -62,6 +62,23 @@ namespace ConfigurableQuota
 
         public static ConfigEntry<float> QuotaAnimationSpeed = null!;
 
+        public static ConfigEntry<bool> MinMaxRateEnabled = null!;
+        public static ConfigEntry<float> MinRate = null!;
+        public static ConfigEntry<float> MaxRate = null!;
+        public static ConfigEntry<bool> RandomRateEnabled = null!;
+        public static ConfigEntry<bool> LastDayRateEnabled = null!;
+        public static ConfigEntry<float> LastDayRangeChance = null!;
+        public static ConfigEntry<float> LastDayMinRate = null!;
+        public static ConfigEntry<float> LastDayMaxRate = null!;
+        public static ConfigEntry<bool> JackpotEnabled = null!;
+        public static ConfigEntry<bool> JackpotLastDayOnly = null!;
+        public static ConfigEntry<float> JackpotChance = null!;
+        public static ConfigEntry<float> JackpotMinRate = null!;
+        public static ConfigEntry<float> JackpotMaxRate = null!;
+        public static ConfigEntry<bool> BuyRateAlertEnabled = null!;
+        public static ConfigEntry<bool> JackpotAlertEnabled = null!;
+        public static ConfigEntry<float> AlertDelaySeconds = null!;
+
         internal static void Initialize(ConfigFile config)
         {
             StartingCredits = config.Bind(
@@ -113,26 +130,26 @@ namespace ConfigurableQuota
                 "0. Basic",
                 "BaseIncrease",
                 100,
-                "Base quota increase. Combined with 'Curve Sharpness' to calculate growth."
+                "Base quota increase per quota. Combined with CurveSharpness via: increase ≈ BaseIncrease * (1 + quota² / Sharpness). Example with defaults (100, 16) at quota 3: 100 * (1 + 9/16) ≈ 156."
             );
             CurveSharpness = config.Bind(
                 "0. Basic",
                 "CurveSharpness",
                 16f,
-                "Quota growth curve. Higher = slower growth. Formula: increase ≈ BaseIncrease x (1 + quotaCount²/Sharpness)"
+                "Quota growth curve. Higher = slower growth. Formula: increase ≈ BaseIncrease * (1 + quota² / Sharpness). Example: BaseIncrease=100, Sharpness=16, quota 5 → 100 * (1 + 25/16) ≈ 256."
             );
             RandomizerMultiplier = config.Bind(
                 "0. Basic",
                 "RandomizerMultiplier",
                 1f,
-                "Adds variation to quota increases. 1 = ±50% variance (vanilla), 0 = no randomness, 2 = ±100% variance."
+                "Adds random variance via factor in [1 - 0.5*M, 1 + 0.5*M]. 0 = no randomness, 1 = ±50% (vanilla), 2 = ±100%."
             );
 
             FinalLevel = config.Bind(
                 "1. Leveling",
                 "FinalLevel",
                 -1,
-                "When quota reaches this value, the Base Increase and Curve Sharpness are ignored. Set -1 to disable."
+                "When the previous quota meets or exceeds this value, growth switches from the curve to a flat FinalIncrease. Example: FinalLevel=10000, FinalIncrease=200 → next quota = previous + 200. Set -1 to disable."
             );
             FinalIncrease = config.Bind(
                 "1. Leveling",
@@ -150,44 +167,44 @@ namespace ConfigurableQuota
                 "1. Leveling",
                 "EnableGrowthDampening",
                 false,
-                "Gradually reduces quota growth after a number of fulfilled cycles, growth will slow down the longer you play."
+                "After DampeningStartAt fulfilled quotas, divide the curve increase by (1 + (excess / DampeningSharpness)²) where excess = currentQuota - DampeningStartAt. Reduces growth the longer you play."
             );
             DampeningStartAt = config.Bind(
                 "1. Leveling",
                 "DampeningStartAt",
                 6,
-                "Number of quota cycles before dampening begins."
+                "Number of fulfilled quotas before dampening starts. Example: 6 means quotas 1–6 are unaffected; dampening kicks in from quota 7 onward."
             );
             DampeningSharpness = config.Bind(
                 "1. Leveling",
                 "DampeningSharpness",
                 11f,
-                "Controls dampening intensity. Lower values reduce growth more aggressively."
+                "Lower = stronger dampening. With DampeningStartAt=6, Sharpness=11, at quota 10: divisor = 1 + (4/11)² ≈ 1.13, so growth shrinks ~12%."
             );
 
             EnablePlayerMultiplier = config.Bind(
-                "2. PlayerScaling",
+                "2. Player.Scaling",
                 "EnablePlayerMultiplier",
                 false,
-                "Scale quota increases based on player count."
+                "Scale each quota increase by (1 + extra * MultPerPlayer) where extra = clamp(playerCount - PlayerThreshold, 0, PlayerCap - PlayerThreshold)."
             );
             PlayerThreshold = config.Bind(
-                "2. PlayerScaling",
+                "2. Player.Scaling",
                 "PlayerThreshold",
                 2,
                 "Player count where scaling begins. Example: 2 means scaling starts at 3+ players."
             );
             PlayerCap = config.Bind(
-                "2. PlayerScaling",
+                "2. Player.Scaling",
                 "PlayerCap",
                 4,
                 "Maximum players counted for scaling. Example: 4 means player 5+ will not increase the quota multiplier."
             );
             MultPerPlayer = config.Bind(
-                "2. PlayerScaling",
+                "2. Player.Scaling",
                 "MultPerPlayer",
                 0.25f,
-                "Quota increase multiplier per extra player. Example: 0.5 = +50% increase per player above threshold."
+                "Extra multiplier per player above the threshold. Example: 4 players, Threshold=2, Cap=4, MultPerPlayer=0.25 → multiplier = 1 + 2*0.25 = 1.5x quota increase."
             );
 
             DisableQuota = config.Bind(
@@ -228,7 +245,7 @@ namespace ConfigurableQuota
                 "4. Penalties.Credits",
                 "Dynamic",
                 false,
-                "Use team death ratio instead of per-player. Example: 2 dead out of 4 total = 50% penalty, not 30% (2x15%)."
+                "Scale credit penalty by (dead/total) * PercentCap. Example: 2 dead out of 8 total with PercentCap=0.05 -> (2/8)*0.05 = 1.25% penalty. When false, uses PercentPerPlayer * dead, capped at PercentCap."
             );
             CreditPenaltyPercentCap = config.Bind(
                 "4. Penalties.Credits",
@@ -246,7 +263,7 @@ namespace ConfigurableQuota
                 "4. Penalties.Credits",
                 "RecoveryBonus",
                 0f,
-                "Reduce penalty if you recover bodies. Example: 0.5 = 50% penalty forgiveness if bodies brought back."
+                "Multiply the penalty by (1 - RecoveryBonus * recovered/dead). Example: 4 dead, 2 recovered, RecoveryBonus=0.5 → final = base * (1 - 0.5*0.5) = base * 0.75 (25% reduction)."
             );
 
             QuotaPenaltiesEnabled = config.Bind(
@@ -271,7 +288,7 @@ namespace ConfigurableQuota
                 "5. Penalties.Quota",
                 "Dynamic",
                 false,
-                "Use team death ratio instead of per-player. Example: 2 dead out of 4 total = 50% quota increase."
+                "Scale quota increase by (dead/total) * PercentCap. Example: 2 dead out of 8 total with PercentCap=0.5 -> (2/8)*0.5 = 12.5% increase. When false, uses PercentPerPlayer * dead, capped at PercentCap."
             );
             QuotaPenaltyPercentCap = config.Bind(
                 "5. Penalties.Quota",
@@ -289,7 +306,7 @@ namespace ConfigurableQuota
                 "5. Penalties.Quota",
                 "RecoveryBonus",
                 0f,
-                "Reduce penalty if you recover bodies. Example: 0.5 = 50% penalty forgiveness if bodies brought back."
+                "Multiply the penalty by (1 - RecoveryBonus * recovered/dead). Example: 4 dead, 2 recovered, RecoveryBonus=0.5 → final = base * (1 - 0.5*0.5) = base * 0.75 (25% reduction)."
             );
 
             ScrapLossEnabled = config.Bind(
@@ -303,7 +320,7 @@ namespace ConfigurableQuota
                 "ItemsSafeChance",
                 0.5f,
                 new ConfigDescription(
-                    "Chance for each scrap to be protected from loss. Example: 0.7 = 70% chance each scrap is safe.",
+                    "Chance for each scrap to be protected from loss. Combined with LoseEachScrapChance: actual loss chance per item = (1 - SafeChance) * LoseChance. Example: Safe=0.5, Lose=0.1 → 5% per item.",
                     new AcceptableValueRange<float>(0f, 1f)
                 )
             );
@@ -368,6 +385,130 @@ namespace ConfigurableQuota
                 new ConfigDescription(
                     "Speed multiplier for the new quota animation. Higher = faster.",
                     new AcceptableValueRange<float>(0.1f, 2f)
+                )
+            );
+
+            MinMaxRateEnabled = config.Bind(
+                "X. Buy.Rate",
+                "MinMaxEnabled",
+                false,
+                "Clamp the Company's daily buy rate to [MinRate, MaxRate]. Required for RandomRateEnabled to take effect."
+            );
+            MinRate = config.Bind(
+                "X. Buy.Rate",
+                "MinRate",
+                0.2f,
+                new ConfigDescription(
+                    "Minimum buy rate the Company will pay. 0.2 = 20%.",
+                    new AcceptableValueRange<float>(0f, 10f)
+                )
+            );
+            MaxRate = config.Bind(
+                "X. Buy.Rate",
+                "MaxRate",
+                1.2f,
+                new ConfigDescription(
+                    "Maximum buy rate the Company will pay. 1.2 = 120%.",
+                    new AcceptableValueRange<float>(0f, 10f)
+                )
+            );
+            RandomRateEnabled = config.Bind(
+                "X. Buy.Rate",
+                "RandomRateEnabled",
+                false,
+                "Pick the daily buy rate uniformly in [MinRate, MaxRate] each day. Requires MinMaxEnabled. Example: MinRate=0.4, MaxRate=1.5 → daily rate is a random value between 40% and 150%."
+            );
+            LastDayRateEnabled = config.Bind(
+                "X. Buy.Rate",
+                "LastDayRateEnabled",
+                false,
+                "On the deadline's last day, override the rate via LastDayMinRate / LastDayMaxRate. Behavior: if min == max, always that value. If min < max, roll LastDayRangeChance — on hit pick a random value in [min, max], on miss fall back to 100%."
+            );
+            LastDayRangeChance = config.Bind(
+                "X. Buy.Rate",
+                "LastDayRangeChance",
+                0.3f,
+                new ConfigDescription(
+                    "Chance to use the LastDayMin/Max range instead of the 100% fallback. Example: 0.3 = 30% chance for the random pick.",
+                    new AcceptableValueRange<float>(0f, 1f)
+                )
+            );
+            LastDayMinRate = config.Bind(
+                "X. Buy.Rate",
+                "LastDayMinRate",
+                1.0f,
+                new ConfigDescription(
+                    "Minimum buy rate on the last day. 1.0 = 100%.",
+                    new AcceptableValueRange<float>(0f, 10f)
+                )
+            );
+            LastDayMaxRate = config.Bind(
+                "X. Buy.Rate",
+                "LastDayMaxRate",
+                1.2f,
+                new ConfigDescription(
+                    "Maximum buy rate on the last day. 1.2 = 120%.",
+                    new AcceptableValueRange<float>(0f, 10f)
+                )
+            );
+            JackpotEnabled = config.Bind(
+                "X. Buy.Rate",
+                "JackpotEnabled",
+                false,
+                "Allow a chance to roll a jackpot rate. Jackpot is checked first (before LastDayRate or RandomRate)."
+            );
+            JackpotLastDayOnly = config.Bind(
+                "X. Buy.Rate",
+                "JackpotLastDayOnly",
+                true,
+                "Jackpot rolls only happen at the deadline's last day."
+            );
+            JackpotChance = config.Bind(
+                "X. Buy.Rate",
+                "JackpotChance",
+                0.01f,
+                new ConfigDescription(
+                    "Chance to roll a jackpot. Example: 0.01 = 1% chance per day (or only on last day if JackpotLastDayOnly).",
+                    new AcceptableValueRange<float>(0f, 1f)
+                )
+            );
+            JackpotMinRate = config.Bind(
+                "X. Buy.Rate",
+                "JackpotMinRate",
+                1.5f,
+                new ConfigDescription(
+                    "Minimum jackpot rate. 1.5 = 150%.",
+                    new AcceptableValueRange<float>(0f, 10f)
+                )
+            );
+            JackpotMaxRate = config.Bind(
+                "X. Buy.Rate",
+                "JackpotMaxRate",
+                3.0f,
+                new ConfigDescription(
+                    "Maximum jackpot rate. 3.0 = 300%.",
+                    new AcceptableValueRange<float>(0f, 10f)
+                )
+            );
+            BuyRateAlertEnabled = config.Bind(
+                "X. Buy.Rate",
+                "BuyRateAlertEnabled",
+                false,
+                "Show a yellow on-screen alert with the new buy rate each day. Local to this client."
+            );
+            JackpotAlertEnabled = config.Bind(
+                "X. Buy.Rate",
+                "JackpotAlertEnabled",
+                false,
+                "Show a red SCRAP EMERGENCY alert with sound when a jackpot is rolled. Local to this client."
+            );
+            AlertDelaySeconds = config.Bind(
+                "X. Buy.Rate",
+                "AlertDelaySeconds",
+                3f,
+                new ConfigDescription(
+                    "Seconds to wait before showing the buy-rate alert. Recommended: 3s when alone, 8+s when running BetterEXP / DiscountAlerts to avoid overlap.",
+                    new AcceptableValueRange<float>(0f, 30f)
                 )
             );
         }
