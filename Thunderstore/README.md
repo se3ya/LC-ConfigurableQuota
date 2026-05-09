@@ -37,12 +37,12 @@
 
 - **Starting Credits** - Credits you start with on a new game
 - **Starting Quota** - First quota value on a new game
-- **Days To Deadline** - Days per quota cycle. Ignored when `RandomizeDeadline` is on
-- **Randomize Deadline** - Pick a random deadline length each cycle using the min/max below. Also used by constellations in `Use Global` mode
+- **Days To Deadline** - Days per quota. Ignored when `RandomizeDeadline` is on
+- **Randomize Deadline** - Pick a random deadline length each quota using the min/max below. Also used by constellations in `Use Global` mode
 - **Deadline Min** - Minimum days when random deadline is enabled
 - **Deadline Max** - Maximum days when random deadline is enabled
 - **Deadline Must Change** - Forces the next random deadline to differ from the previous one
-- **Base Increase** - Base amount the quota goes up each cycle
+- **Base Increase** - Base amount the quota goes up each quota
 - **Curve Sharpness** - Controls how fast the quota scales. Higher = slower growth
 - **Randomizer Multiplier** - Adds variation to quota increases. 0 = no randomness, 1 = vanilla variance
 
@@ -53,9 +53,9 @@ increase ≈ BaseIncrease * (1 + quota² / CurveSharpness) * randomFactor
 randomFactor ∈ [1 - 0.5*RandomizerMultiplier, 1 + 0.5*RandomizerMultiplier]
 ```
 
-**Worked example** with defaults (`BaseIncrease=100`, `CurveSharpness=16`, `RandomizerMultiplier=1`), average roll:
+**Example** with defaults (`BaseIncrease=100`, `CurveSharpness=16`, `RandomizerMultiplier=1`):
 
-| Cycle | Curve term            | Avg increase | Cumulative quota (start 130) |
+| Quota | Curve term            | Avg increase | Cumulative quota (start 130) |
 |------:|----------------------:|-------------:|-----------------------------:|
 | 1     | 100 × (1 + 1/16) ≈ 106  | ~106 ± 53    | ~236                         |
 | 2     | 100 × (1 + 4/16) ≈ 125  | ~125 ± 63    | ~361                         |
@@ -80,7 +80,7 @@ divisor = 1 + (excess / DampeningSharpness)²
 finalIncrease = curveIncrease / divisor
 ```
 
-**Worked example**: `DampeningStartAt=6`, `DampeningSharpness=11`, at cycle 10:
+**Example**: `DampeningStartAt=6`, `DampeningSharpness=11`, at quota 10:
 
 ```
 excess = 10 - 6 = 4
@@ -102,7 +102,7 @@ extra = clamp(playerCount - PlayerThreshold, 0, PlayerCap - PlayerThreshold)
 multiplier = 1 + extra * MultPerPlayer
 ```
 
-**Worked example**: 4 players, `PlayerThreshold=2`, `PlayerCap=4`, `MultPerPlayer=0.25`:
+**Example**: 4 players, `PlayerThreshold=2`, `PlayerCap=4`, `MultPerPlayer=0.25`:
 
 ```
 extra = clamp(4 - 2, 0, 4 - 2) = 2
@@ -114,7 +114,7 @@ multiplier = 1 + 2 * 0.25 = 1.5x
 ### **3. Optional**
 
 - **Disable Quota** - Disables the quota system entirely
-- **Rollover Amount** - Percentage of excess fulfillment that carries over to the next cycle. 0 = none
+- **Rollover Amount** - Percentage of excess fulfillment that carries over to the next quota. 0 = none
 
 **Rollover example**: quota was 100, you sold $150 of scrap (overage = $50), `RolloverAmount = 0.5`:
 
@@ -144,19 +144,19 @@ if recovered > 0:
 if pct < PercentThreshold: pct = 0
 ```
 
-**Worked example A** — fixed mode, 8-player lobby, 2 dead, `PercentPerPlayer=0.15`, `PercentCap=0.5`:
+**Example A** — fixed mode, 8-player lobby, 2 dead, `PercentPerPlayer=0.15`, `PercentCap=0.5`:
 
 ```
 pct = 2 * 0.15 = 30%   (under 50% cap → applied as-is)
 ```
 
-**Worked example B** — dynamic mode, 8-player lobby, 2 dead, `PercentCap=0.05`:
+**Example B** — dynamic mode, 8-player lobby, 2 dead, `PercentCap=0.05`:
 
 ```
 pct = (2 / 8) * 0.05 = 1.25%
 ```
 
-**Worked example C** — recovery bonus, 4 dead, 2 recovered, `RecoveryBonus=0.5`, base 30%:
+**Example C** — recovery bonus, 4 dead, 2 recovered, `RecoveryBonus=0.5`, base 30%:
 
 ```
 pct = 30% * (1 - 0.5 * 2/4) = 30% * 0.75 = 22.5%
@@ -175,7 +175,7 @@ pct = 30% * (1 - 0.5 * 2/4) = 30% * 0.75 = 22.5%
 lossChance = (1 - ItemsSafeChance) * LoseEachScrapChance
 ```
 
-**Worked example**: 10 items on the ship, `ItemsSafeChance=0.5`, `LoseEachScrapChance=0.1`:
+**Example**: 10 items on the ship, `ItemsSafeChance=0.5`, `LoseEachScrapChance=0.1`:
 
 ```
 lossChance = 0.5 * 0.1 = 5% per item
@@ -200,7 +200,7 @@ remaining = (1 - 0.25)³ = 0.75³ ≈ 0.42
 - **Lose Each Equipment Chance** - Chance for each equipment item to be lost
 - **Max Lost Equipment Items** - Maximum equipment items lost per round
 
-**Worked example**: 6 equipment items on the ship, `LoseEachEquipmentChance=0.05`, `MaxLostEquipmentItems=1`:
+**Example**: 6 equipment items on the ship, `LoseEachEquipmentChance=0.05`, `MaxLostEquipmentItems=1`:
 
 ```
 expected losses ≈ 6 * 0.05 = 0.3 items per wipe (capped at 1)
@@ -242,7 +242,7 @@ Native port of *BuyRateSettings* features. All entries default OFF; the Company'
 
 | Day                    | Result                                      |
 |------------------------|---------------------------------------------|
-| Mid-cycle, no jackpot  | Vanilla rate clamped to `[0.3, 1.0]`        |
+| Mid-quota, no jackpot  | Vanilla rate clamped to `[0.3, 1.0]`        |
 | Last day, no jackpot   | `1.2` (120%) from last-day override         |
 | Last day, jackpot hits | Random pick in `[1.5, 3.0]` + red alert     |
 
