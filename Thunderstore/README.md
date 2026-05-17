@@ -244,11 +244,11 @@ size   = BaseSize * factor
 
 ### **B. Dynamic.Scrap.Value**
 
-Scales the moon's current min/max total scrap value (after moon mods) with a player count factor.
+Scales the moons min/max total scrap value with a player count factor.
 
 - **Enabled** - Toggle
 - **ScrapValueOffset** - Flat credits added to both min and max after scaling
-- **MinValueMultiplier / MaxValueMultiplier** - Extra scale applied to the moon's current min/max values
+- **MinValueMultiplier / MaxValueMultiplier** - Extra scale applied to the moons min/max values
 - **PlayerThreshold** - Player count where scaling kicks in
 - **ScalingDirection** - `PerMissingPlayer` (boost when below threshold) or `PerExtraPlayer` (boost when above threshold)
 - **MultPerPlayer** - Multiplier added per player
@@ -272,9 +272,7 @@ max    = round(baseMaxTotalScrapValue * MaxValueMultiplier * factor) + ScrapValu
 
 ### **C. Dynamic.Scrap.Amount**
 
-Scales the moon's min/max scrap item count off baseMinTotalScrapValue, with a player count factor.
-
-Dynamic Scrap Amount is independent from Dynamic Scrap Value output. Enabling both will not compound the two systems.
+Scales the moons min/max scrap item count off baseMinTotalScrapValue, with a player count factor.
 
 - **Enabled** - Toggle
 - **ValuePerScrapItem** - Divisor on the scaled value: lower = more items per moon
