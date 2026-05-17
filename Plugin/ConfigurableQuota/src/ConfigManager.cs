@@ -587,20 +587,20 @@ namespace ConfigurableQuota
                 "B. Dynamic.Scrap.Value",
                 "Enabled",
                 false,
-                "Scale the moons min/max scrap value against the current quota."
+                "Scale the moons min/max scrap value by player count."
             );
             DynamicScrapValueOffset = config.Bind(
                 "B. Dynamic.Scrap.Value",
                 "ScrapValueOffset",
-                100,
-                "Flat credits added to both min and max after the multiplier. Acts as a floor."
+                0,
+                "Flat credits added to both min and max after scaling. Leave at 0 to only use proportional scaling."
             );
             DynamicScrapValueMinMult = config.Bind(
                 "B. Dynamic.Scrap.Value",
                 "MinValueMultiplier",
-                0.5f,
+                1.0f,
                 new ConfigDescription(
-                    "minTotalScrapValue = round(quota * this * factor) + ScrapValueOffset. With quota=300, this=0.5, factor=1.2, offset=100 you land at $280.",
+                    "minTotalScrapValue = round(baseMinTotalScrapValue * this * factor) + ScrapValueOffset.",
                     new AcceptableValueRange<float>(0f, 100f)
                 )
             );
@@ -609,7 +609,7 @@ namespace ConfigurableQuota
                 "MaxValueMultiplier",
                 1.0f,
                 new ConfigDescription(
-                    "maxTotalScrapValue = round(quota * this * factor) + ScrapValueOffset. Keep it at or above MinValueMultiplier.",
+                    "maxTotalScrapValue = round(baseMaxTotalScrapValue * this * factor) + ScrapValueOffset. Keep it at or above MinValueMultiplier.",
                     new AcceptableValueRange<float>(0f, 100f)
                 )
             );
@@ -642,14 +642,14 @@ namespace ConfigurableQuota
                 "C. Dynamic.Scrap.Amount",
                 "Enabled",
                 false,
-                "Scale the moons min/max scrap item count off the current minTotalScrapValue."
+                "Scale the moons min/max scrap item count off baseMinTotalScrapValue."
             );
             DynamicScrapAmountValuePerItem = config.Bind(
                 "C. Dynamic.Scrap.Amount",
                 "ValuePerScrapItem",
                 25,
                 new ConfigDescription(
-                    "Divisor that turns scaled scrap value into item count. maxScrap = (minTotalScrapValue * factor) / this. Lower numbers mean more items per moon. At minTotalScrapValue=200, factor=1.15, this=25 you get maxScrap = floor(230/25) = 9.",
+                    "Divisor that turns scaled baseMinTotalScrapValue into item count. maxScrap = (baseMinTotalScrapValue * factor) / this. Lower numbers mean more items per moon. At baseMinTotalScrapValue=200, factor=1.15, this=25 you get maxScrap = floor(230/25) = 9.",
                     new AcceptableValueRange<int>(1, 1000)
                 )
             );

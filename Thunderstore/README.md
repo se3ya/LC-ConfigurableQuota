@@ -244,11 +244,11 @@ size   = BaseSize * factor
 
 ### **B. Dynamic.Scrap.Value**
 
-Scales the moons min/max total scrap value against the current quota, with a player count factor.
+Scales the moon's current min/max total scrap value (after moon mods) with a player count factor.
 
 - **Enabled** - Toggle
-- **ScrapValueOffset** - Flat credits added to both min and max after the multiplier
-- **MinValueMultiplier / MaxValueMultiplier** - Percentage of the current quota that the moon should hold
+- **ScrapValueOffset** - Flat credits added to both min and max after scaling
+- **MinValueMultiplier / MaxValueMultiplier** - Extra scale applied to the moon's current min/max values
 - **PlayerThreshold** - Player count where scaling kicks in
 - **ScalingDirection** - `PerMissingPlayer` (boost when below threshold) or `PerExtraPlayer` (boost when above threshold)
 - **MultPerPlayer** - Multiplier added per player
@@ -259,20 +259,22 @@ Scales the moons min/max total scrap value against the current quota, with a pla
 count  = PerMissingPlayer ? max(0, PlayerThreshold - playerCount)
                           : max(0, playerCount - PlayerThreshold)
 factor = 1 + count * MultPerPlayer
-min    = round(quota * MinValueMultiplier * factor) + ScrapValueOffset
-max    = round(quota * MaxValueMultiplier * factor) + ScrapValueOffset
+min    = round(baseMinTotalScrapValue * MinValueMultiplier * factor) + ScrapValueOffset
+max    = round(baseMaxTotalScrapValue * MaxValueMultiplier * factor) + ScrapValueOffset
 ```
 
-**Solo boost example** (defaults: `PerMissingPlayer`, `PlayerThreshold=2`, `MultPerPlayer=0.15`, `MinMult=0.5`, `MaxMult=1.0`, `Offset=100`):
+**Solo boost example** (`PerMissingPlayer`, `PlayerThreshold=2`, `MultPerPlayer=0.15`, `MinMult=1.0`, `MaxMult=1.0`, `Offset=0`):
 
-| Players | factor | quota | min | max |
-|---:|---:|---:|---:|---:|
-| 1 (solo) | 1.15 | $300 | $273 | $445 |
-| 2+ | 1.00 | $300 | $250 | $400 |
+| Players | factor | base min/max | scaled min/max |
+|---:|---:|---:|---:|
+| 1 (solo) | 1.15 | $1200 / $1800 | $1380 / $2070 |
+| 2+ | 1.00 | $1200 / $1800 | $1200 / $1800 |
 
 ### **C. Dynamic.Scrap.Amount**
 
-Scales the moons min/max scrap item count off the current minTotalScrapValue, with a player count factor.
+Scales the moon's min/max scrap item count off baseMinTotalScrapValue, with a player count factor.
+
+Dynamic Scrap Amount is independent from Dynamic Scrap Value output. Enabling both will not compound the two systems.
 
 - **Enabled** - Toggle
 - **ValuePerScrapItem** - Divisor on the scaled value: lower = more items per moon
@@ -288,14 +290,14 @@ Scales the moons min/max scrap item count off the current minTotalScrapValue, wi
 count    = PerMissingPlayer ? max(0, PlayerThreshold - playerCount)
                             : max(0, playerCount - PlayerThreshold)
 factor   = 1 + count * MultPerPlayer
-maxScrap = max(1, round(minTotalScrapValue * factor) / ValuePerScrapItem)
+maxScrap = max(1, round(baseMinTotalScrapValue * factor) / ValuePerScrapItem)
 if cap >= 0: maxScrap = min(maxScrap, MaxScrapItemsCap)
 minScrap = max(1, round(maxScrap * MinScrapFraction))
 ```
 
 **Solo boost example** (defaults: `PerMissingPlayer`, `PlayerThreshold=2`, `MultPerPlayer=0.15`, `Divisor=25`, `Fraction=0.6`):
 
-| minTotalScrapValue | Players | factor | maxScrap | minScrap |
+| baseMinTotalScrapValue | Players | factor | maxScrap | minScrap |
 |---:|---:|---:|---:|---:|
 | $200 | 1 (solo) | 1.15 | 9 | 5 |
 | $200 | 2+ | 1.00 | 8 | 5 |
@@ -304,7 +306,7 @@ minScrap = max(1, round(maxScrap * MinScrapFraction))
 
 **Tighter cap** (`MaxScrapItemsCap=15`):
 
-| minTotalScrapValue | Raw maxScrap | Capped | minScrap |
+| baseMinTotalScrapValue | Raw maxScrap | Capped | minScrap |
 |---:|---:|---:|---:|
 | $500 | 20 | 15 | 9 |
 | $1,000 | 40 | 15 | 9 |

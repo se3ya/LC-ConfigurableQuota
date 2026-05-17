@@ -27,7 +27,7 @@ namespace ConfigurableQuota.Patches
         [HarmonyAfter(new[] { Metadata.LLL_GUID, Metadata.LUNAR_CONFIG_GUID })]
         private static void GenerateNewFloor_Prefix(RoundManager __instance)
         {
-            if (!ShouldRun(__instance, out var level)) return;
+            if (!ShouldRunServer(__instance, out var level)) return;
             if (!ConfigManager.DynamicInteriorSizeEnabled.Value) return;
 
             float factor = ComputePlayerFactor(
@@ -140,19 +140,23 @@ namespace ConfigurableQuota.Patches
 
         private static void ApplyScrapValue(SelectableLevel level)
         {
-            int quota = Mathf.Max(1, TimeOfDay.Instance?.profitQuota ?? 1);
+            int baseMin = Mathf.Max(1, _savedMinScrapValue);
+            int baseMax = Mathf.Max(baseMin, _savedMaxScrapValue);
             float factor = ComputePlayerFactor(
                 ConfigManager.DynamicScrapValuePlayerThreshold.Value,
                 ConfigManager.DynamicScrapValueMultPerPlayer.Value,
                 ConfigManager.DynamicScrapValueDirection.Value);
 
             int offset = ConfigManager.DynamicScrapValueOffset.Value;
-            int min = Mathf.RoundToInt(quota * ConfigManager.DynamicScrapValueMinMult.Value * factor) + offset;
-            int max = Mathf.RoundToInt(quota * ConfigManager.DynamicScrapValueMaxMult.Value * factor) + offset;
+            int min = Mathf.RoundToInt(baseMin * ConfigManager.DynamicScrapValueMinMult.Value * factor) + offset;
+            int max = Mathf.RoundToInt(baseMax * ConfigManager.DynamicScrapValueMaxMult.Value * factor) + offset;
+
+            if (min < 1) min = 1;
+            if (max < 1) max = 1;
             if (max < min) max = min;
             level.minTotalScrapValue = min;
             level.maxTotalScrapValue = max;
-            Plugin.Log.LogInfo($"Dynamic scrap value: factor={factor:F2}, min/max=${min}/${max}.");
+            Plugin.Log.LogInfo($"Dynamic scrap value: factor={factor:F2}, base=${baseMin}/${baseMax}, min/max=${min}/${max}.");
         }
 
         private static void ApplyScrapAmount(SelectableLevel level)
@@ -162,8 +166,20 @@ namespace ConfigurableQuota.Patches
                 ConfigManager.DynamicScrapAmountMultPerPlayer.Value,
                 ConfigManager.DynamicScrapAmountDirection.Value);
 
+            int baseMinTotalScrapValue = Mathf.Max(0, _savedMinScrapValue);
+            if (baseMinTotalScrapValue <= 0)
+            {
+                int baseMinScrap = Mathf.Max(0, _savedMinScrap);
+                int baseMaxScrap = Mathf.Max(baseMinScrap, _savedMaxScrap);
+                level.minScrap = baseMinScrap;
+                level.maxScrap = baseMaxScrap;
+                Plugin.Log.LogInfo(
+                    $"Dynamic scrap amount - factor={factor:F2}, baseline scrap value <= 0 so keeping base min/max items={baseMinScrap}/{baseMaxScrap}.");
+                return;
+            }
+
             int divisor = Mathf.Max(1, ConfigManager.DynamicScrapAmountValuePerItem.Value);
-            int scaled = Mathf.RoundToInt(level.minTotalScrapValue * factor);
+            int scaled = Mathf.RoundToInt(baseMinTotalScrapValue * factor);
             int maxScrap = Mathf.Max(1, scaled / divisor);
             int cap = ConfigManager.DynamicScrapAmountCap.Value;
             if (cap >= 0) maxScrap = Mathf.Min(maxScrap, cap);

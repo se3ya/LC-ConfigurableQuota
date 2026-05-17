@@ -13,6 +13,7 @@ namespace ConfigurableQuota.Patches
     {
         private static bool _initialDeadlineApplied;
         private static bool _initialDeadlineWasConstellationSpecific;
+        private static bool _loggedPlayerCapAutofix;
 
         private readonly struct DeadlineSelection
         {
@@ -165,12 +166,26 @@ namespace ConfigurableQuota.Patches
             if (netManager == null || !netManager.IsServer) return 1f;
 
             int playerCount = Mathf.Max(1, netManager.ConnectedClientsList?.Count ?? 1);
-            int threshold = ConfigManager.PlayerThreshold.Value;
+            int threshold = Mathf.Max(0, ConfigManager.PlayerThreshold.Value);
             int extraPlayers = playerCount - threshold;
 
             if (extraPlayers <= 0) return 1f;
 
             int cap = ConfigManager.PlayerCap.Value;
+            if (cap <= threshold)
+            {
+                int fixedCap = threshold + 1;
+                ConfigManager.PlayerCap.Value = fixedCap;
+                cap = fixedCap;
+
+                if (!_loggedPlayerCapAutofix)
+                {
+                    _loggedPlayerCapAutofix = true;
+                    Plugin.Log.LogWarning(
+                        $"Player scaling config was invalid (PlayerCap <= PlayerThreshold). Auto-fixed PlayerCap to {fixedCap}.");
+                }
+            }
+
             int maxExtra = Mathf.Max(0, cap - threshold);
             extraPlayers = Mathf.Clamp(extraPlayers, 0, maxExtra);
 
@@ -414,14 +429,21 @@ namespace ConfigurableQuota.Patches
             min = Math.Max(1, rawMin);
             max = Math.Max(min, rawMax);
 
-            int d = UnityEngine.Random.Range(min, max + 1);
-
-            if (ConfigManager.DeadlineMustChange.Value && min != max)
+            if (ConfigManager.DeadlineMustChange.Value
+                && min != max
+                && prevDays >= min
+                && prevDays <= max)
             {
-                for (int attempt = 0; attempt < 8 && d == prevDays; attempt++)
-                    d = UnityEngine.Random.Range(min, max + 1);
+                int alternatives = (max - min + 1) - 1;
+                int index = UnityEngine.Random.Range(0, alternatives);
+                int dNoRepeat = min + index;
+                if (dNoRepeat >= prevDays)
+                    dNoRepeat++;
+
+                return dNoRepeat;
             }
 
+            int d = UnityEngine.Random.Range(min, max + 1);
             return d;
         }
 
