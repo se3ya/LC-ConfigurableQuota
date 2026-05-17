@@ -74,6 +74,8 @@ namespace ConfigurableQuota.Patches
 
                 ___profitQuota = newQuota;
                 int rollover = CalculateRollover(overage);
+                int rolloverCap = Math.Max(0, ___profitQuota - 1);
+                int appliedRollover = Math.Min(rollover, rolloverCap);
 
                 int deadline = SetDeadlineTimer(
                     ___totalTime,
@@ -87,16 +89,19 @@ namespace ConfigurableQuota.Patches
 
                 __instance.SyncNewProfitQuotaClientRpc(___profitQuota, overtimeBonus, ___timesFulfilledQuota);
 
-                ___quotaFulfilled = rollover;
+                ___quotaFulfilled = appliedRollover;
                 ___daysUntilDeadline = deadline;
                 ___timeUntilDeadline = ___totalTime * deadline;
 
                 NetworkSync.SyncDeadlineToClients(deadline);
-                if (rollover > 0)
-                    NetworkSync.SyncRolloverToClients(rollover);
+                if (appliedRollover > 0)
+                    NetworkSync.SyncRolloverToClients(appliedRollover);
 
+                string rolloverLog = appliedRollover < rollover
+                    ? $"{appliedRollover} (capped from {rollover})"
+                    : appliedRollover.ToString();
                 Plugin.Log.LogInfo(
-                    $"Quota {___timesFulfilledQuota}: {previousQuota} -> {newQuota}, deadline {deadline} days, rollover {rollover}, overtime {overtimeBonus} credits.");
+                    $"Quota {___timesFulfilledQuota}: {previousQuota} -> {newQuota}, deadline {deadline} days, rollover {rolloverLog}, overtime {overtimeBonus} credits.");
 
                 return false;
             }

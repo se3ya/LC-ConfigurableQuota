@@ -27,6 +27,10 @@
 - Configure new quota animation speed
 - Show actual penalty values on fine UI
 - Configure the Company's buy rate with min/max clamp, random rate, last-day override and jackpot rolls
+- Configure dynamic interior size that scales with player count
+- Configure dynamic scrap value with player-count scaling (solo or full lobby can be boosted)
+- Configure dynamic scrap item count with player-count scaling
+- Configure dynamic enemy power that scales with player count
 - __LethalConstellations__ compatibility with per-constellation deadline modes _[ fixed, random or use global ]_
 
 ---
@@ -56,7 +60,7 @@ randomFactor ∈ [1 - 0.5*RandomizerMultiplier, 1 + 0.5*RandomizerMultiplier]
 **Example** with defaults (`BaseIncrease=100`, `CurveSharpness=16`, `RandomizerMultiplier=1`):
 
 | Quota | Curve term            | Avg increase | Cumulative quota (start 130) |
-|------:|----------------------:|-------------:|-----------------------------:|
+|:-----:|:---------------------:|:------------:|:----------------------------:|
 | 1     | 100 × (1 + 1/16) ≈ 106  | ~106 ± 53    | ~236                         |
 | 2     | 100 × (1 + 4/16) ≈ 125  | ~125 ± 63    | ~361                         |
 | 3     | 100 × (1 + 9/16) ≈ 156  | ~156 ± 78    | ~517                         |
@@ -210,6 +214,134 @@ expected losses ≈ 6 * 0.05 = 0.3 items per wipe (capped at 1)
 
 - **Quota Animation Speed** - Speed of the new quota pop-up animation. Higher = faster
 
+### **A. Dynamic.Interior.Size**
+
+Scales the moons interior multiplier by player count.
+
+- **Enabled** - Toggle
+- **BaseSize** - Starting multiplier applied before the player factor
+- **PlayerThreshold** - Player count where scaling kicks in
+- **ScalingDirection** - `PerMissingPlayer` (boost when below threshold) or `PerExtraPlayer` (boost when above threshold)
+- **MultPerPlayer** - Multiplier added per player
+
+**Formula**:
+
+```
+count  = PerMissingPlayer ? max(0, PlayerThreshold - playerCount)
+                          : max(0, playerCount - PlayerThreshold)
+factor = 1 + count * MultPerPlayer
+size   = BaseSize * factor
+```
+
+**Example** (`PerExtraPlayer`, `PlayerThreshold=2`, `MultPerPlayer=0.10`, `BaseSize=1.0`):
+
+| Players | count | factor | size |
+|---:|---:|---:|---:|
+| 1 | 0 | 1.00 | 1.00 |
+| 2 | 0 | 1.00 | 1.00 |
+| 3 | 1 | 1.10 | 1.10 |
+| 4 | 2 | 1.20 | 1.20 |
+
+### **B. Dynamic.Scrap.Value**
+
+Scales the moons min/max total scrap value against the current quota, with a player count factor.
+
+- **Enabled** - Toggle
+- **ScrapValueOffset** - Flat credits added to both min and max after the multiplier
+- **MinValueMultiplier / MaxValueMultiplier** - Percentage of the current quota that the moon should hold
+- **PlayerThreshold** - Player count where scaling kicks in
+- **ScalingDirection** - `PerMissingPlayer` (boost when below threshold) or `PerExtraPlayer` (boost when above threshold)
+- **MultPerPlayer** - Multiplier added per player
+
+**Formula**:
+
+```
+count  = PerMissingPlayer ? max(0, PlayerThreshold - playerCount)
+                          : max(0, playerCount - PlayerThreshold)
+factor = 1 + count * MultPerPlayer
+min    = round(quota * MinValueMultiplier * factor) + ScrapValueOffset
+max    = round(quota * MaxValueMultiplier * factor) + ScrapValueOffset
+```
+
+**Solo boost example** (defaults: `PerMissingPlayer`, `PlayerThreshold=2`, `MultPerPlayer=0.15`, `MinMult=0.5`, `MaxMult=1.0`, `Offset=100`):
+
+| Players | factor | quota | min | max |
+|---:|---:|---:|---:|---:|
+| 1 (solo) | 1.15 | $300 | $273 | $445 |
+| 2+ | 1.00 | $300 | $250 | $400 |
+
+### **C. Dynamic.Scrap.Amount**
+
+Scales the moons min/max scrap item count off the current minTotalScrapValue, with a player count factor.
+
+- **Enabled** - Toggle
+- **ValuePerScrapItem** - Divisor on the scaled value: lower = more items per moon
+- **MinScrapFraction** - `minScrap = round(maxScrap * this)`
+- **MaxScrapItemsCap** - Hard ceiling on `maxScrap`. `-1` disables the cap
+- **PlayerThreshold** - Player count where scaling kicks in
+- **ScalingDirection** - `PerMissingPlayer` (boost when below threshold) or `PerExtraPlayer` (boost when above threshold)
+- **MultPerPlayer** - Multiplier added per player
+
+**Formula**:
+
+```
+count    = PerMissingPlayer ? max(0, PlayerThreshold - playerCount)
+                            : max(0, playerCount - PlayerThreshold)
+factor   = 1 + count * MultPerPlayer
+maxScrap = max(1, round(minTotalScrapValue * factor) / ValuePerScrapItem)
+if cap >= 0: maxScrap = min(maxScrap, MaxScrapItemsCap)
+minScrap = max(1, round(maxScrap * MinScrapFraction))
+```
+
+**Solo boost example** (defaults: `PerMissingPlayer`, `PlayerThreshold=2`, `MultPerPlayer=0.15`, `Divisor=25`, `Fraction=0.6`):
+
+| minTotalScrapValue | Players | factor | maxScrap | minScrap |
+|---:|---:|---:|---:|---:|
+| $200 | 1 (solo) | 1.15 | 9 | 5 |
+| $200 | 2+ | 1.00 | 8 | 5 |
+| $1,000 | 1 | 1.15 | 46 | 28 |
+| $1,000 | 4 | 1.00 | 40 | 24 |
+
+**Tighter cap** (`MaxScrapItemsCap=15`):
+
+| minTotalScrapValue | Raw maxScrap | Capped | minScrap |
+|---:|---:|---:|---:|
+| $500 | 20 | 15 | 9 |
+| $1,000 | 40 | 15 | 9 |
+| $2,000 | 80 | 15 | 9 |
+
+### **D. Dynamic.Enemy.Power**
+
+Scales moons enemy power budgets by player count. Higher budget = more / stronger enemies can spawn.
+
+- **Enabled** - Toggle
+- **ScaleInside** - Apply to `maxEnemyPowerCount`
+- **ScaleOutside** - Apply to `maxOutsideEnemyPowerCount` (night time outside enemies)
+- **ScaleDaytime** - Apply to `maxDaytimeEnemyPowerCount` (daytime enemies)
+- **PlayerThreshold** - Player count where scaling kicks in. More players above this = more enemies
+- **MultPerPlayer** - Multiplier added per extra player above the threshold
+- **MaxFactor** - Safety cap on the resolved factor. Floor is always 1
+
+**Formula**:
+
+```
+count  = max(0, playerCount - PlayerThreshold)
+factor = min(MaxFactor, 1 + count * MultPerPlayer)
+maxEnemyPowerCount        *= factor   (if ScaleInside)
+maxOutsideEnemyPowerCount *= factor   (if ScaleOutside)
+maxDaytimeEnemyPowerCount *= factor   (if ScaleDaytime)
+```
+
+**Example** (defaults: `PlayerThreshold=2`, `MultPerPlayer=0.15`, `MaxFactor=3.0`):
+
+| Players | count | factor | inside @ vanilla 8 | outside @ vanilla 8 |
+|:---:|:---:|:---:|:---:|:---:|
+| 1 | 0 | 1.00 | 8 | 8 |
+| 2 | 0 | 1.00 | 8 | 8 |
+| 3 | 1 | 1.15 | 9 | 9 |
+| 4 | 2 | 1.30 | 10 | 10 |
+| 8 | 6 | 1.90 | 15 | 15 |
+
 ### **X. Buy.Rate**
 
 Native port of *BuyRateSettings* features. All entries default OFF; the Company's daily buy rate is vanilla until you enable something here. The host computes the rate and broadcasts it to clients — no desync.
@@ -267,7 +399,7 @@ Not recommended.
 ## Credits
 
 - Developed by **[seeya](https://thunderstore.io/c/lethal-company/p/seechela/)**
-- Inspired mostly from QuotaOverhaul, AfineQuota, BuyRateSettings and ChocoQuota
+- Inspired mostly from QuotaOverhaul, AfineQuota, BuyRateSettings, CustomDeathPenalty and ChocoQuota
 
 ---
 

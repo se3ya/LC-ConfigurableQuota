@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-05-17
+
+### Added
+
+- Dynamic interior size, scrap value and scrap item count that scale by player count
+- Dynamic enemy power that scales by player count
+
+### Fixed
+
+- Quota no longer resets several days in a row after a big sell
+
 ## [1.2.0] - 2026-05-09
 
 ### Added

@@ -11,6 +11,8 @@ namespace ConfigurableQuota
   [BepInDependency(Metadata.LETHAL_CONSTELLATIONS_GUID, BepInDependency.DependencyFlags.SoftDependency)]
   [BepInDependency(Metadata.LETHAL_MOON_UNLOCKS_GUID, BepInDependency.DependencyFlags.SoftDependency)]
   [BepInDependency(Metadata.OPEN_LIB_GUID, BepInDependency.DependencyFlags.SoftDependency)]
+  [BepInDependency(Metadata.LLL_GUID, BepInDependency.DependencyFlags.SoftDependency)]
+  [BepInDependency(Metadata.LUNAR_CONFIG_GUID, BepInDependency.DependencyFlags.SoftDependency)]
   public class Plugin : BaseUnityPlugin
   {
     private readonly Harmony _harmony = new(Metadata.GUID);

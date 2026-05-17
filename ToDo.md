@@ -1,13 +1,2 @@
-- Solo starting quota and multiplayer starting quota
-- Dynamic interior size calculation
-  - Size increase threshold
-  - Size offset
-  - Min size clamp
-  - Max size clamp
-- Dynamic scrap calculation
-  - Scrap value offset
-  - Enemy power threshold
-  - Enemy power threshold weight
-  - Multiplier for min scrap value
-  - Multiplier for max scrap value
-- Credits player multiplier
+- Credits player count multiplier
+- An config option to make buy rate in The Company be visible in the main monitor when routed to it
