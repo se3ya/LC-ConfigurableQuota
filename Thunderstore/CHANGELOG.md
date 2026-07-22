@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2026-07-22
+
+### Added
+
+- Optional config option to stop rolled over scrap from also counting toward the overtime bonus
+
+### Fixed
+
+- Getting fired or ejecting in the same session now keeps the correct starting constellation deadline instead of the previous one
+- Deadline and buy rate now sync to players who join mid game
+
 ## [1.3.1] - 2026-05-17
 
 ### Changed
