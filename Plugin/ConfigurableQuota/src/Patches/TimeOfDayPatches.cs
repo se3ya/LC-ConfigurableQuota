@@ -71,12 +71,16 @@ namespace ConfigurableQuota.Patches
 
                 int daysLeftAtFulfill = ___daysUntilDeadline;
                 int overage = ___quotaFulfilled - previousQuota;
-                int overtimeBonus = (overage / 5) + (15 * daysLeftAtFulfill);
 
                 ___profitQuota = newQuota;
                 int rollover = CalculateRollover(overage);
                 int rolloverCap = Math.Max(0, ___profitQuota - 1);
                 int appliedRollover = Math.Min(rollover, rolloverCap);
+
+                int overtimeBase = ConfigManager.OvertimeExcludesRollover.Value
+                    ? overage - appliedRollover
+                    : overage;
+                int overtimeBonus = (overtimeBase / 5) + (15 * daysLeftAtFulfill);
 
                 int deadline = SetDeadlineTimer(
                     ___totalTime,
@@ -224,6 +228,9 @@ namespace ConfigurableQuota.Patches
         private static void TimeOfDay_Start_Postfix(TimeOfDay __instance)
         {
             ConstellationDeadlineConfig.RefreshSections();
+
+            if (__instance.IsServer)
+                LateJoinSync.EnsureSubscribed();
 
             if (__instance.timesFulfilledQuota == 0)
             {
@@ -478,7 +485,7 @@ namespace ConfigurableQuota.Patches
                 : $"fixed {Math.Max(1, ConfigManager.DaysToDeadline.Value)}d";
         }
 
-        private static void ResetInitialDeadlineTracking()
+        internal static void ResetInitialDeadlineTracking()
         {
             _initialDeadlineApplied = false;
             _initialDeadlineWasConstellationSpecific = false;
