@@ -23,6 +23,7 @@ namespace ConfigurableQuota
 
         public static ConfigEntry<bool> DisableQuota = null!;
         public static ConfigEntry<float> RolloverAmount = null!;
+        public static ConfigEntry<bool> OvertimeExcludesRollover = null!;
 
         public static ConfigEntry<bool> CreditPenaltiesEnabled = null!;
         public static ConfigEntry<bool> CreditPenaltiesOnGordion = null!;
@@ -252,6 +253,12 @@ namespace ConfigurableQuota
                     "Percentage of extra scrap value that goes above the set limit and is added to the next quota. 0 = none (vanilla), 0.5 = 50%, 1.0 = 100%.",
                     new AcceptableValueRange<float>(0f, 1f)
                 )
+            );
+            OvertimeExcludesRollover = config.Bind(
+                "3. Optional",
+                "OvertimeExcludesRollover",
+                false,
+                "If true, scrap value that rolls over into the next quota no longer also counts toward the overtime bonus, so the same scrap isnt rewarded twice. Only affects the scrap conversion (overage / 5). Requires RolloverAmount > 0 to have any effect."
             );
 
             CreditPenaltiesEnabled = config.Bind(
