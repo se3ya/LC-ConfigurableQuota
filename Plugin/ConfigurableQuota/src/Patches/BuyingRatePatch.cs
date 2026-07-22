@@ -45,13 +45,14 @@ namespace ConfigurableQuota.Patches
             }
         }
 
-        internal static void ApplyReceivedBuyingRate(float rate, bool isJackpot)
+        internal static void ApplyReceivedBuyingRate(float rate, bool isJackpot, bool silent = false)
         {
             var sor = StartOfRound.Instance;
             if (sor != null)
                 sor.companyBuyingRate = rate;
 
-            DisplayBuyRateAlert(rate, isJackpot);
+            if (!silent)
+                DisplayBuyRateAlert(rate, isJackpot);
         }
 
         private static (float rate, bool isJackpot, string source) ResolveRate(float vanillaRate, int daysUntilDeadline)

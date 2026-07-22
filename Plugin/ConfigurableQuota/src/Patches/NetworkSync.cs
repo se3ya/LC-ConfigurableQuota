@@ -249,6 +249,24 @@ namespace ConfigurableQuota.Patches
             }
         }
 
+        public static void SyncDeadlineToClient(int days, ulong clientId)
+        {
+            try
+            {
+                if (_syncDeadlineMessage == null)
+                {
+                    Plugin.Log.LogWarning("Deadline message not initialized");
+                    return;
+                }
+
+                _syncDeadlineMessage.SendClient(days, clientId);
+            }
+            catch (Exception ex)
+            {
+                Plugin.Log.LogError($"Could not sync deadline to client {clientId}: {ex.Message}");
+            }
+        }
+
         private static void OnDeadlineReceived(int days)
         {
             try
@@ -323,7 +341,7 @@ namespace ConfigurableQuota.Patches
 
         #region Buying Rate Sync
 
-        public static void SyncBuyingRateToClients(float rate, bool isJackpot)
+        public static void SyncBuyingRateToClients(float rate, bool isJackpot, bool silent = false)
         {
             try
             {
@@ -333,7 +351,7 @@ namespace ConfigurableQuota.Patches
                     return;
                 }
 
-                _syncBuyingRateMessage.SendClients(new SyncBuyingRateData(rate, isJackpot));
+                _syncBuyingRateMessage.SendClients(new SyncBuyingRateData(rate, isJackpot, silent));
             }
             catch (Exception ex)
             {
@@ -341,11 +359,29 @@ namespace ConfigurableQuota.Patches
             }
         }
 
+        public static void SyncBuyingRateToClient(float rate, bool isJackpot, ulong clientId, bool silent = false)
+        {
+            try
+            {
+                if (_syncBuyingRateMessage == null)
+                {
+                    Plugin.Log.LogWarning("Buying rate message not initialized");
+                    return;
+                }
+
+                _syncBuyingRateMessage.SendClient(new SyncBuyingRateData(rate, isJackpot, silent), clientId);
+            }
+            catch (Exception ex)
+            {
+                Plugin.Log.LogError($"Could not sync buying rate to client {clientId}: {ex.Message}");
+            }
+        }
+
         private static void OnBuyingRateReceived(SyncBuyingRateData data)
         {
             try
             {
-                BuyingRatePatch.ApplyReceivedBuyingRate(data.Rate, data.IsJackpot);
+                BuyingRatePatch.ApplyReceivedBuyingRate(data.Rate, data.IsJackpot, data.Silent);
             }
             catch (Exception ex)
             {
@@ -374,11 +410,13 @@ namespace ConfigurableQuota.Patches
     {
         public float Rate;
         public bool IsJackpot;
+        public bool Silent;
 
-        public SyncBuyingRateData(float rate, bool isJackpot)
+        public SyncBuyingRateData(float rate, bool isJackpot, bool silent = false)
         {
             Rate = rate;
             IsJackpot = isJackpot;
+            Silent = silent;
         }
     }
 
