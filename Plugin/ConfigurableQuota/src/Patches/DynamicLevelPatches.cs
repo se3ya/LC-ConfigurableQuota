@@ -135,7 +135,7 @@ namespace ConfigurableQuota.Patches
             int count = direction == PlayerScalingDirection.PerMissingPlayer
                 ? Mathf.Max(0, threshold - GetPlayerCount())
                 : Mathf.Max(0, GetPlayerCount() - threshold);
-            return 1f + count * Mathf.Max(0f, mult);
+            return 1f + (count * Mathf.Max(0f, mult));
         }
 
         private static void ApplyScrapValue(SelectableLevel level)
