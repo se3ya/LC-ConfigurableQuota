@@ -4,6 +4,7 @@ using System.Linq;
 using HarmonyLib;
 using Unity.Netcode;
 using UnityEngine;
+using ConfigurableQuota.Compat;
 
 namespace ConfigurableQuota.Patches
 {
@@ -388,7 +389,8 @@ namespace ConfigurableQuota.Patches
                 var allGrab = UnityEngine.Object.FindObjectsOfType<GrabbableObject>();
                 if (allGrab == null || allGrab.Length == 0) return;
 
-                var shipItems = allGrab.Where(IsShipItem).ToArray();
+                var protectedByStorage = SelfSortingStorageCompat.GetStoredItems();
+                var shipItems = allGrab.Where(g => IsShipItem(g) && !protectedByStorage.Contains(g)).ToArray();
                 var shipScrap = shipItems.Where(g => g.itemProperties.isScrap).ToArray();
                 var shipEquip = shipItems.Where(g => !g.itemProperties.isScrap && !IsBodyOrBlacklisted(g)).ToArray();
                 int shipScrapBeforeLoss = SumScrapValue(shipScrap);
