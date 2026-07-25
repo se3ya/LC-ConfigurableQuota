@@ -24,7 +24,7 @@ namespace ConfigurableQuota.Patches
 
         [HarmonyPatch("GenerateNewFloor")]
         [HarmonyPrefix]
-        [HarmonyAfter(new[] { Metadata.LLL_GUID, Metadata.LUNAR_CONFIG_GUID })]
+        [HarmonyAfter(new[] { ModGUIDs.LLL_GUID, ModGUIDs.LUNAR_CONFIG_GUID })]
         private static void GenerateNewFloor_Prefix(RoundManager __instance)
         {
             if (!ShouldRunServer(__instance, out var level)) return;
@@ -41,7 +41,7 @@ namespace ConfigurableQuota.Patches
 
         [HarmonyPatch("SpawnScrapInLevel")]
         [HarmonyPrefix]
-        [HarmonyAfter(new[] { Metadata.LLL_GUID, Metadata.LUNAR_CONFIG_GUID })]
+        [HarmonyAfter(new[] { ModGUIDs.LLL_GUID, ModGUIDs.LUNAR_CONFIG_GUID })]
         private static void SpawnScrapInLevel_Prefix(RoundManager __instance)
         {
             if (!ShouldRunServer(__instance, out var level)) return;
@@ -66,7 +66,7 @@ namespace ConfigurableQuota.Patches
 
         [HarmonyPatch("GenerateNewFloor")]
         [HarmonyPrefix]
-        [HarmonyAfter(new[] { Metadata.LLL_GUID, Metadata.LUNAR_CONFIG_GUID })]
+        [HarmonyAfter(new[] { ModGUIDs.LLL_GUID, ModGUIDs.LUNAR_CONFIG_GUID })]
         private static void EnemyPower_GenerateNewFloor_Prefix(RoundManager __instance)
         {
             if (!ShouldRunServer(__instance, out var level)) return;

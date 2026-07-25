@@ -16,7 +16,7 @@ namespace ConfigurableQuota.Patches
 
         [HarmonyPatch(nameof(GameNetworkManager.ResetSavedGameValues))]
         [HarmonyPostfix]
-        [HarmonyAfter(new[] { Metadata.LETHAL_MOON_UNLOCKS_GUID })]
+        [HarmonyAfter(new[] { ModGUIDs.LETHAL_MOON_UNLOCKS_GUID })]
         private static void ResetSavedGameValues_Postfix(GameNetworkManager __instance)
         {
             try

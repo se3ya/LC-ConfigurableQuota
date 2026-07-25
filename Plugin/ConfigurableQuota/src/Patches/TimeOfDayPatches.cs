@@ -44,7 +44,7 @@ namespace ConfigurableQuota.Patches
         [HarmonyPatch(nameof(TimeOfDay.SetNewProfitQuota))]
         [HarmonyPrefix]
         [HarmonyPriority(Priority.Low)]
-        [HarmonyAfter(new[] { Metadata.LETHAL_MOON_UNLOCKS_GUID })]
+        [HarmonyAfter(new[] { ModGUIDs.LETHAL_MOON_UNLOCKS_GUID })]
         private static bool SetNewProfitQuota_Prefix(TimeOfDay __instance,
             ref int ___timesFulfilledQuota,
             ref int ___profitQuota,

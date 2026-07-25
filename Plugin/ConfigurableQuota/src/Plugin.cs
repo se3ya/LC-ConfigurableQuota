@@ -6,16 +6,17 @@ using ConfigurableQuota.Patches;
 
 namespace ConfigurableQuota
 {
-  [BepInPlugin(Metadata.GUID, Metadata.PLUGIN_NAME, Metadata.VERSION)]
-  [BepInDependency(Metadata.LETHAL_NETWORK_API_GUID)]
-  [BepInDependency(Metadata.LETHAL_CONSTELLATIONS_GUID, BepInDependency.DependencyFlags.SoftDependency)]
-  [BepInDependency(Metadata.LETHAL_MOON_UNLOCKS_GUID, BepInDependency.DependencyFlags.SoftDependency)]
-  [BepInDependency(Metadata.OPEN_LIB_GUID, BepInDependency.DependencyFlags.SoftDependency)]
-  [BepInDependency(Metadata.LLL_GUID, BepInDependency.DependencyFlags.SoftDependency)]
-  [BepInDependency(Metadata.LUNAR_CONFIG_GUID, BepInDependency.DependencyFlags.SoftDependency)]
+  [BepInPlugin(MyPluginInfo.PLUGIN_GUID, MyPluginInfo.PLUGIN_NAME, MyPluginInfo.PLUGIN_VERSION)]
+  [BepInDependency(ModGUIDs.LETHAL_NETWORK_API_GUID)]
+  [BepInDependency(ModGUIDs.LETHAL_CONSTELLATIONS_GUID, BepInDependency.DependencyFlags.SoftDependency)]
+  [BepInDependency(ModGUIDs.LETHAL_MOON_UNLOCKS_GUID, BepInDependency.DependencyFlags.SoftDependency)]
+  [BepInDependency(ModGUIDs.OPEN_LIB_GUID, BepInDependency.DependencyFlags.SoftDependency)]
+  [BepInDependency(ModGUIDs.LLL_GUID, BepInDependency.DependencyFlags.SoftDependency)]
+  [BepInDependency(ModGUIDs.LUNAR_CONFIG_GUID, BepInDependency.DependencyFlags.SoftDependency)]
+  [BepInDependency(ModGUIDs.SELF_SORTING_STORAGE_GUID, BepInDependency.DependencyFlags.SoftDependency)]
   public class Plugin : BaseUnityPlugin
   {
-    private readonly Harmony _harmony = new(Metadata.GUID);
+    private readonly Harmony _harmony = new(MyPluginInfo.PLUGIN_GUID);
     public static Plugin Instance { get; private set; } = null!;
     public static ManualLogSource Log { get; private set; } = null!;
 
@@ -25,7 +26,7 @@ namespace ConfigurableQuota
 
       Log = base.Logger;
 
-      Log.LogInfo($"Initializing {Metadata.PLUGIN_NAME}");
+      Log.LogInfo($"Initializing {MyPluginInfo.PLUGIN_NAME}");
 
       ConfigManager.Initialize(Config);
 
@@ -37,7 +38,7 @@ namespace ConfigurableQuota
 
       OpenLibEventBridge.TrySubscribe();
 
-      Log.LogInfo($"{Metadata.PLUGIN_NAME} is loaded!");
+      Log.LogInfo($"{MyPluginInfo.PLUGIN_NAME} is loaded!");
     }
   }
 }

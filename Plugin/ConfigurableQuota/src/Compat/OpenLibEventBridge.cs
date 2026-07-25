@@ -15,9 +15,9 @@ namespace ConfigurableQuota.Compat
             if (_subscribed)
                 return;
 
-            if (!Chainloader.PluginInfos.ContainsKey(Metadata.OPEN_LIB_GUID))
+            if (!Chainloader.PluginInfos.ContainsKey(ModGUIDs.OPEN_LIB_GUID))
             {
-                Plugin.Log.LogDebug("OpenLib not loaded; constellation deadline event subscription skipped.");
+                Plugin.Log.LogDebug("OpenLib not loaded, constellation deadline event subscription skipped.");
                 return;
             }
 
@@ -67,7 +67,7 @@ namespace ConfigurableQuota.Compat
             }
             catch (Exception e)
             {
-                Plugin.Log.LogWarning($"OpenLib level-change handler failed: {e.Message}");
+                Plugin.Log.LogWarning($"OpenLib level change handler failed: {e.Message}");
             }
         }
     }

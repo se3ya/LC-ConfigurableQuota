@@ -22,7 +22,7 @@ namespace ConfigurableQuota.Compat
 
         private static bool _loggedReflectionFailure;
 
-        internal static bool IsInstalled => Chainloader.PluginInfos.ContainsKey(Metadata.LETHAL_CONSTELLATIONS_GUID);
+        internal static bool IsInstalled => Chainloader.PluginInfos.ContainsKey(ModGUIDs.LETHAL_CONSTELLATIONS_GUID);
 
         internal static bool TryGetCurrentConstellationName(out string constellationName)
         {
