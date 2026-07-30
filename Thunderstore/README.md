@@ -119,6 +119,7 @@ multiplier = 1 + 2 * 0.25 = 1.5x
 
 - **Disable Quota** - Disables the quota system entirely
 - **Rollover Amount** - Percentage of excess fulfillment that carries over to the next quota. 0 = none
+- **Rollover Wipe Penalty** - lose percentage of banked rollover when the entire crew dies. 0.5 = 50%
 
 **Rollover example**: quota was 100, you sold $150 of scrap (overage = $50), `RolloverAmount = 0.5`:
 
