@@ -157,6 +157,24 @@ namespace ConfigurableQuota.Patches
             }
         }
 
+        public static void SyncQuotaToClient(int quota, ulong clientId)
+        {
+            try
+            {
+                if (_syncQuotaMessage == null)
+                {
+                    Plugin.Log.LogWarning("Quota message not initialized");
+                    return;
+                }
+
+                _syncQuotaMessage.SendClient(new SyncQuotaData(quota, 0), clientId);
+            }
+            catch (Exception ex)
+            {
+                Plugin.Log.LogError($"Could not sync quota to client {clientId}: {ex.Message}");
+            }
+        }
+
         private static void OnQuotaReceived(SyncQuotaData data)
         {
             try
@@ -317,6 +335,24 @@ namespace ConfigurableQuota.Patches
             catch (Exception ex)
             {
                 Plugin.Log.LogError($"Could not sync rollover: {ex.Message}");
+            }
+        }
+
+        public static void SyncRolloverToClient(int rollover, ulong clientId)
+        {
+            try
+            {
+                if (_syncRolloverMessage == null)
+                {
+                    Plugin.Log.LogWarning("Rollover message not initialized");
+                    return;
+                }
+
+                _syncRolloverMessage.SendClient(rollover, clientId);
+            }
+            catch (Exception ex)
+            {
+                Plugin.Log.LogError($"Could not sync rollover to client {clientId}: {ex.Message}");
             }
         }
 

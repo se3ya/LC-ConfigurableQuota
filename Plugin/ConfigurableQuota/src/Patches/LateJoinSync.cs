@@ -58,7 +58,11 @@ namespace ConfigurableQuota.Patches
 
                 var tod = TimeOfDay.Instance;
                 if (tod != null)
+                {
                     NetworkSync.SyncDeadlineToClient(tod.daysUntilDeadline, clientId);
+                    NetworkSync.SyncQuotaToClient(tod.profitQuota, clientId);
+                    NetworkSync.SyncRolloverToClient(tod.quotaFulfilled, clientId);
+                }
 
                 var sor = StartOfRound.Instance;
                 if (sor != null)

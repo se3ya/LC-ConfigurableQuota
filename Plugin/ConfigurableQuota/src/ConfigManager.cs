@@ -24,6 +24,7 @@ namespace ConfigurableQuota
         public static ConfigEntry<bool> DisableQuota = null!;
         public static ConfigEntry<float> RolloverAmount = null!;
         public static ConfigEntry<bool> OvertimeExcludesRollover = null!;
+        public static ConfigEntry<float> RolloverWipePenalty = null!;
 
         public static ConfigEntry<bool> CreditPenaltiesEnabled = null!;
         public static ConfigEntry<bool> CreditPenaltiesOnGordion = null!;
@@ -259,6 +260,15 @@ namespace ConfigurableQuota
                 "OvertimeExcludesRollover",
                 false,
                 "If true, scrap value that rolls over into the next quota no longer also counts toward the overtime bonus, so the same scrap isnt rewarded twice. Only affects the scrap conversion (overage / 5). Requires RolloverAmount > 0 to have any effect."
+            );
+            RolloverWipePenalty = config.Bind(
+                "3. Optional",
+                "RolloverWipePenalty",
+                0.0f,
+                new ConfigDescription(
+                    "Percentage of banked rollover that is lost when the entire crew dies. 0.5 = lose 50%. Requires RolloverAmount > 0 to have any effect.",
+                    new AcceptableValueRange<float>(0f, 1f)
+                )
             );
 
             CreditPenaltiesEnabled = config.Bind(

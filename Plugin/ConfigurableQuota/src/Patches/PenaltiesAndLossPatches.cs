@@ -200,6 +200,10 @@ namespace ConfigurableQuota.Patches
                     {
                         ApplyQuotaPenalty(dead, total, recovered);
                     }
+                    if (ConfigManager.RolloverWipePenalty.Value > 0f)
+                    {
+                        ApplyRolloverWipePenalty();
+                    }
 
                     _appliedThisRound = true;
                     return false;
@@ -352,6 +356,28 @@ namespace ConfigurableQuota.Patches
 
                 Plugin.Log.LogInfo($"Quota penalty applied: {oldQuota} -> {newQuota} (+{delta}, {pct:P0}, {dead}/{total} dead).");
             }
+        }
+
+        private static void ApplyRolloverWipePenalty()
+        {
+            float pct = Mathf.Clamp01(ConfigManager.RolloverWipePenalty.Value);
+            if (pct <= 0f) return;
+
+            var tod = TimeOfDay.Instance;
+            if (tod == null) return;
+
+            int banked = tod.quotaFulfilled;
+            if (banked <= 0) return;
+
+            int cut = Mathf.RoundToInt(banked * pct);
+            if (cut <= 0) return;
+
+            int newFulfilled = Mathf.Max(0, banked - cut);
+            tod.quotaFulfilled = newFulfilled;
+
+            NetworkSync.SyncRolloverToClients(newFulfilled);
+
+            Plugin.Log.LogInfo($"Rollover wipe penalty applied: {banked} -> {newFulfilled} (-{cut}, {pct:P0}).");
         }
 
         private static void DespawnFacilityItems()
