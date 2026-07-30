@@ -11,7 +11,7 @@
     </PropertyGroup>
 
     <PropertyGroup>
-        <Version>1.4.1</Version>
+        <Version>1.4.2</Version>
         <BepInExPluginGuid>com.seeya.configurablequota</BepInExPluginGuid>
         <BepInExPluginName>Configurable Quota</BepInExPluginName>
     </PropertyGroup>
