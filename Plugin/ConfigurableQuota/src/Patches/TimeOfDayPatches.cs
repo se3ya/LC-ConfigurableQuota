@@ -78,9 +78,11 @@ namespace ConfigurableQuota.Patches
                 int appliedRollover = Math.Min(rollover, rolloverCap);
 
                 int overtimeBase = ConfigManager.OvertimeExcludesRollover.Value
-                    ? overage - appliedRollover
+                    ? Math.Max(DepositItemsDeskPatches.SoldThisQuota - previousQuota, 0)
                     : overage;
                 int overtimeBonus = (overtimeBase / 5) + (15 * daysLeftAtFulfill);
+
+                DepositItemsDeskPatches.SoldThisQuota = 0;
 
                 int deadline = SetDeadlineTimer(
                     ___totalTime,
