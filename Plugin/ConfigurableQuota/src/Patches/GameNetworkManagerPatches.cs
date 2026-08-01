@@ -21,6 +21,8 @@ namespace ConfigurableQuota.Patches
         {
             try
             {
+                DepositItemsDeskPatches.SoldThisQuota = 0;
+
                 if (!LethalConstellationsCompat.IsInstalled)
                     return;
 
