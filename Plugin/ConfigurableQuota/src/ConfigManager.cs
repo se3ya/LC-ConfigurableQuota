@@ -259,7 +259,7 @@ namespace ConfigurableQuota
                 "3. Optional",
                 "OvertimeExcludesRollover",
                 false,
-                "If true, scrap value that rolls over into the next quota no longer also counts toward the overtime bonus, so the same scrap isnt rewarded twice. Only affects the scrap conversion (overage / 5). Requires RolloverAmount > 0 to have any effect."
+                "If true, overtime bonus only counts scrap you sold at the Company above the quota. Stops rollover from inflating the bonus. Only affects scrap conversion part (sold / 5), not the days-left part. Requires RolloverAmount > 0 to have any effect."
             );
             RolloverWipePenalty = config.Bind(
                 "3. Optional",
