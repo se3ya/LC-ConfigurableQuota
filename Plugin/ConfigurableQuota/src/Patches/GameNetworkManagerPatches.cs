@@ -22,6 +22,7 @@ namespace ConfigurableQuota.Patches
             try
             {
                 DepositItemsDeskPatches.SoldThisQuota = 0;
+                TimeOfDayQuotaPatch.LastAppliedRollover = 0;
 
                 if (!LethalConstellationsCompat.IsInstalled)
                     return;
