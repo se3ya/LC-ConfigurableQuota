@@ -15,6 +15,8 @@ namespace ConfigurableQuota.Patches
         private static bool _initialDeadlineWasConstellationSpecific;
         private static bool _loggedPlayerCapAutofix;
 
+        internal static int LastAppliedRollover;
+
         private readonly struct DeadlineSelection
         {
             internal DeadlineSelection(
@@ -64,6 +66,16 @@ namespace ConfigurableQuota.Patches
                     return false;
                 }
 
+                if (ConfigManager.RolloverAmount.Value > 0f
+                    && DepositItemsDeskPatches.SoldThisQuota <= 0
+                    && ___quotaFulfilled <= LastAppliedRollover
+                    && ___timeUntilDeadline > 0f)
+                {
+                    Plugin.Log.LogInfo(
+                        $"Quota {___profitQuota} already covered by rollover and nothing was sold, holding it until sale or deadline.");
+                    return false;
+                }
+
                 int previousQuota = ___profitQuota;
                 ___timesFulfilledQuota++;
 
@@ -73,9 +85,7 @@ namespace ConfigurableQuota.Patches
                 int overage = ___quotaFulfilled - previousQuota;
 
                 ___profitQuota = newQuota;
-                int rollover = CalculateRollover(overage);
-                int rolloverCap = Math.Max(0, ___profitQuota - 1);
-                int appliedRollover = Math.Min(rollover, rolloverCap);
+                int appliedRollover = CalculateRollover(overage);
 
                 int overtimeBase = ConfigManager.OvertimeExcludesRollover.Value
                     ? Math.Max(DepositItemsDeskPatches.SoldThisQuota - previousQuota, 0)
@@ -97,6 +107,7 @@ namespace ConfigurableQuota.Patches
                 __instance.SyncNewProfitQuotaClientRpc(___profitQuota, overtimeBonus, ___timesFulfilledQuota);
 
                 ___quotaFulfilled = appliedRollover;
+                LastAppliedRollover = appliedRollover;
                 ___daysUntilDeadline = deadline;
                 ___timeUntilDeadline = ___totalTime * deadline;
 
@@ -104,11 +115,8 @@ namespace ConfigurableQuota.Patches
                 if (appliedRollover > 0)
                     NetworkSync.SyncRolloverToClients(appliedRollover);
 
-                string rolloverLog = appliedRollover < rollover
-                    ? $"{appliedRollover} (capped from {rollover})"
-                    : appliedRollover.ToString();
                 Plugin.Log.LogInfo(
-                    $"Quota {___timesFulfilledQuota}: {previousQuota} -> {newQuota}, deadline {deadline} days, rollover {rolloverLog}, overtime {overtimeBonus} credits.");
+                    $"Quota {___timesFulfilledQuota}: {previousQuota} -> {newQuota}, deadline {deadline} days, rollover {appliedRollover}, overtime {overtimeBonus} credits.");
 
                 return false;
             }
