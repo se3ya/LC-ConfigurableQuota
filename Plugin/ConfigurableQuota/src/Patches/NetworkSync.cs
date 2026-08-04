@@ -362,10 +362,7 @@ namespace ConfigurableQuota.Patches
             {
                 var tod = TimeOfDay.Instance;
                 if (tod != null)
-                {
-                    int capped = Math.Min(rollover, Math.Max(0, tod.profitQuota - 1));
-                    tod.quotaFulfilled = capped;
-                }
+                    tod.quotaFulfilled = Math.Max(0, rollover);
             }
             catch (Exception ex)
             {
