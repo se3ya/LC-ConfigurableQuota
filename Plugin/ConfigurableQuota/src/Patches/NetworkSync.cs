@@ -221,21 +221,17 @@ namespace ConfigurableQuota.Patches
         {
             try
             {
-                var allGrab = UnityEngine.Object.FindObjectsOfType<GrabbableObject>();
-                foreach (var g in allGrab)
-                {
-                    try
-                    {
-                        var netObj = g.GetComponent<Unity.Netcode.NetworkObject>();
-                        if (g != null && netObj != null && netObj.NetworkObjectId == data.NetworkObjectId && g.itemProperties?.isScrap == true)
-                        {
-                            g.scrapValue = data.NewValue;
-                            try { g.SetScrapValue(data.NewValue); } catch { }
-                            break;
-                        }
-                    }
-                    catch { }
-                }
+                var spawnManager = Unity.Netcode.NetworkManager.Singleton?.SpawnManager;
+                if (spawnManager == null) return;
+
+                if (!spawnManager.SpawnedObjects.TryGetValue(data.NetworkObjectId, out var netObj) || netObj == null)
+                    return;
+
+                var item = netObj.GetComponent<GrabbableObject>();
+                if (item == null || item.itemProperties?.isScrap != true) return;
+
+                item.scrapValue = data.NewValue;
+                try { item.SetScrapValue(data.NewValue); } catch { }
             }
             catch (Exception ex)
             {
