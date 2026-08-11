@@ -12,7 +12,7 @@ namespace ConfigurableQuota.Patches
 
         [HarmonyPatch(nameof(TimeOfDay.SetBuyingRateForDay))]
         [HarmonyPostfix]
-        [HarmonyPriority(Priority.Low)]
+        [HarmonyPriority(Priority.First)]
         private static void SetBuyingRateForDay_Postfix(TimeOfDay __instance)
         {
             try
@@ -30,14 +30,7 @@ namespace ConfigurableQuota.Patches
 
                 sor.companyBuyingRate = rate;
 
-                int rounded = Mathf.RoundToInt(rate * 100f);
-                Plugin.Log.LogInfo($"Buy rate set to {rounded}% ({source}, jackpot={isJackpot}).");
-
-                __instance.StartCoroutine(ReapplyBuyRate(rate, ReapplyDelaySeconds));
-
-                NetworkSync.SyncBuyingRateToClients(rate, isJackpot);
-
-                DisplayBuyRateAlert(rate, isJackpot);
+                __instance.StartCoroutine(FinalizeBuyRate(isJackpot, source));
             }
             catch (Exception e)
             {
@@ -104,17 +97,30 @@ namespace ConfigurableQuota.Patches
             return (vanillaRate, false, "vanilla");
         }
 
-        private static IEnumerator ReapplyBuyRate(float rate, float delay)
+        private static IEnumerator FinalizeBuyRate(bool isJackpot, string source)
         {
-            yield return new WaitForSeconds(delay);
+            yield return null;
 
             var sor = StartOfRound.Instance;
             if (sor == null) yield break;
 
-            if (!Mathf.Approximately(sor.companyBuyingRate, rate))
+            float finalRate = sor.companyBuyingRate;
+
+            Plugin.Log.LogInfo($"Buy rate set to {Mathf.RoundToInt(finalRate * 100f)}% ({source}, jackpot={isJackpot}).");
+
+            NetworkSync.SyncBuyingRateToClients(finalRate, isJackpot);
+            DisplayBuyRateAlert(finalRate, isJackpot);
+
+            yield return new WaitForSeconds(ReapplyDelaySeconds);
+
+            sor = StartOfRound.Instance;
+            if (sor == null) yield break;
+
+            if (!Mathf.Approximately(sor.companyBuyingRate, finalRate))
             {
-                sor.companyBuyingRate = rate;
-                Plugin.Log.LogDebug($"Re-applied buy rate {Mathf.RoundToInt(rate * 100f)}% after {delay:0.#}s.");
+                sor.companyBuyingRate = finalRate;
+                NetworkSync.SyncBuyingRateToClients(finalRate, isJackpot, silent: true);
+                Plugin.Log.LogDebug($"Re-applied buy rate {Mathf.RoundToInt(finalRate * 100f)}% after {ReapplyDelaySeconds:0.#}s.");
             }
         }
 
