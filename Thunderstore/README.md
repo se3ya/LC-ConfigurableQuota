@@ -1,7 +1,8 @@
-<div style="display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px;">
-  <img src="https://img.shields.io/codefactor/grade/github/se3ya/LC-ConfigurableQuota?style=flat&logo=codefactor&logoColor=white&color=83E6FB&cacheSeconds=1200" alt="CodeFactor Grade">
-  <img src="https://img.shields.io/thunderstore/dt/seechela/Configurable_Quota?style=flat&logo=thunderstore&logoColor=white&color=83E6FB&cacheSeconds=1200" alt="Thunderstore Downloads">
-  <img src="https://img.shields.io/github/v/release/se3ya/LC-ConfigurableQuota?style=flat&logo=github&logoColor=white&color=83E6FB&cacheSeconds=1200" alt="GitHub Release Version">
+<div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 16px;">
+  <a href="https://www.codefactor.io/repository/github/se3ya/lc-configurablequota"><img src="https://img.shields.io/codefactor/grade/github/se3ya/LC-ConfigurableQuota?style=flat&logo=codefactor&logoColor=white&color=83E6FB&cacheSeconds=1200" alt="CodeFactor Grade"></a>
+  <a href="https://thunderstore.io/c/lethal-company/p/seechela/Configurable_Quota/"><img src="https://img.shields.io/thunderstore/dt/seechela/Configurable_Quota?style=flat&logo=thunderstore&logoColor=white&color=83E6FB&cacheSeconds=1200" alt="Thunderstore Downloads"></a>
+  <a href="https://github.com/se3ya/LC-ConfigurableQuota/releases"><img src="https://img.shields.io/github/v/release/se3ya/LC-ConfigurableQuota?style=flat&logo=github&logoColor=white&color=83E6FB&cacheSeconds=1200" alt="GitHub Release Version"></a>
+  <a href="https://discord.gg/Z9rUwTtUpx"><img src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fdiscordapp.com%2Fapi%2Finvites%2FZ9rUwTtUpx%3Fwith_counts%3Dtrue&query=approximate_member_count&style=flat&logo=discord&logoColor=white&color=83E6FB&cacheSeconds=1200&label=Discord" alt="Discord"></a>
   </div>
 <br><br>
 
