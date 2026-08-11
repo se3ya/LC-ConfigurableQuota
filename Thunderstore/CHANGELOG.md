@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] - 2026-08-11
+
+### Added
+
+- LGU compatibility
+- Scrap Insurance compatibility
+
+### Fixed
+
+- SSS items ignoring the scrap, value and equipment loss settings
+- Quota clearing after reloading save when rollover already covers it
+- Items inside belt bags and in a cruiser being deleted on a crew wipe
+- Deadline not being rolled after getting fired or ejected without LethalConstellations
+- Collected scrap being counted as new collected again on following round
+
 ## [1.4.4] - 2026-08-04
 
 ### Fixed
