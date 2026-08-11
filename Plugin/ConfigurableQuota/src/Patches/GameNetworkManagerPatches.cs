@@ -21,11 +21,7 @@ namespace ConfigurableQuota.Patches
         {
             try
             {
-                DepositItemsDeskPatches.SoldThisQuota = 0;
-                TimeOfDayQuotaPatch.LastAppliedRollover = 0;
-
-                if (!LethalConstellationsCompat.IsInstalled)
-                    return;
+                QuotaSaveData.Clear();
 
                 var tod = TimeOfDay.Instance;
                 if (tod == null)
@@ -36,16 +32,45 @@ namespace ConfigurableQuota.Patches
 
                 TimeOfDayQuotaPatch.ResetInitialDeadlineTracking();
 
-                LethalConstellationsCompat.TryGetCurrentConstellationName(out string staleConstellation);
-
                 int generation = ++_firedResetGeneration;
-
                 MonoBehaviour host = __instance != null ? __instance : (MonoBehaviour)tod;
+
+                if (!LethalConstellationsCompat.IsInstalled)
+                {
+                    host.StartCoroutine(ReapplyDeadlineAfterShipReset(generation));
+                    return;
+                }
+
+                LethalConstellationsCompat.TryGetCurrentConstellationName(out string staleConstellation);
                 host.StartCoroutine(ReapplyDeadlineWhenConstellationSettles(generation, staleConstellation));
             }
             catch (Exception e)
             {
                 Plugin.Log.LogWarning($"Could not schedule deadline reapply after firing: {e.Message}");
+            }
+        }
+
+        private static IEnumerator ReapplyDeadlineAfterShipReset(int generation)
+        {
+            float elapsed = 0f;
+
+            while (elapsed < SettleTimeoutSeconds)
+            {
+                if (generation != _firedResetGeneration)
+                    yield break;
+
+                var tod = TimeOfDay.Instance;
+                if (tod == null)
+                    yield break;
+
+                if (tod.timesFulfilledQuota == 0)
+                {
+                    ApplySettledDeadline(tod);
+                    yield break;
+                }
+
+                elapsed += Time.deltaTime;
+                yield return null;
             }
         }
 
