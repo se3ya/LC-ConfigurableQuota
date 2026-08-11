@@ -20,6 +20,7 @@ namespace ConfigurableQuota.Patches
             int dead = 0;
             int total = 0;
             int recovered = 0;
+            RagdollGrabbableObject[]? _ragdollCache = null;
 
             foreach (var player in sor.allPlayerScripts)
             {
@@ -40,7 +41,9 @@ namespace ConfigurableQuota.Patches
 
                 if (ragdoll == null)
                 {
-                    foreach (var r in UnityEngine.Object.FindObjectsOfType<RagdollGrabbableObject>())
+                    _ragdollCache ??= UnityEngine.Object.FindObjectsOfType<RagdollGrabbableObject>();
+
+                    foreach (var r in _ragdollCache)
                     {
                         if (r?.GetComponent<DeadBodyInfo>()?.playerScript == player)
                         {
@@ -182,9 +185,13 @@ namespace ConfigurableQuota.Patches
 
                 if (!despawnAllItems && !atCompany && dead >= total && !_lossesAppliedThisRound)
                 {
+                    CollectVehicleItems();
+                    MarkBeltBagContentsAsShipItems();
+
                     DespawnFacilityItems();
 
                     ApplyLossesWhenAllDead();
+                    MarkSurvivingItemsAsPersisted();
                     _lossesAppliedThisRound = true;
                     HasAllDeadSnapshot = true;
 
@@ -270,6 +277,8 @@ namespace ConfigurableQuota.Patches
                     ConfigManager.CreditPenaltyPercentThreshold.Value,
                     ConfigManager.CreditPenaltyRecoveryBonus.Value,
                     dead, total, recovered);
+
+                pct = MoreShipUpgradesCompat.ApplyLifeInsurance(pct);
 
                 if (pct <= 0f) return;
 
@@ -380,6 +389,100 @@ namespace ConfigurableQuota.Patches
             Plugin.Log.LogInfo($"Rollover wipe penalty applied: {banked} -> {newFulfilled} (-{cut}, {pct:P0}).");
         }
 
+        private static void CollectVehicleItems()
+        {
+            try
+            {
+                foreach (var vehicle in UnityEngine.Object.FindObjectsOfType<VehicleController>())
+                {
+                    try
+                    {
+                        if (vehicle == null) continue;
+
+                        if (vehicle.magnetedToShip)
+                        {
+                            vehicle.CollectItemsInTruck();
+                            continue;
+                        }
+
+                        var netObj = vehicle.NetworkObject;
+                        if (netObj != null && netObj.IsSpawned)
+                            netObj.Despawn(false);
+                    }
+                    catch (Exception ex)
+                    {
+                        Plugin.Log.LogDebug($"Skipped vehicle cleanup: {ex.Message}");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Plugin.Log.LogWarning($"Could not collect vehicle items: {ex.Message}");
+            }
+        }
+
+        private static void MarkBeltBagContentsAsShipItems()
+        {
+            try
+            {
+                foreach (var bag in UnityEngine.Object.FindObjectsOfType<BeltBagItem>())
+                {
+                    try
+                    {
+                        if (bag == null) continue;
+
+                        if (bag.insideAnotherBeltBag != null
+                            && (bag.insideAnotherBeltBag.isInShipRoom || bag.insideAnotherBeltBag.isHeld))
+                        {
+                            bag.isInElevator = true;
+                            bag.isInShipRoom = true;
+                        }
+
+                        if (!bag.isInShipRoom && !bag.isHeld) continue;
+
+                        foreach (var stored in bag.objectsInBag)
+                        {
+                            if (stored == null) continue;
+
+                            stored.isInElevator = true;
+                            stored.isInShipRoom = true;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Plugin.Log.LogDebug($"Skipped belt bag contents: {ex.Message}");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Plugin.Log.LogWarning($"Could not protect belt bag contents: {ex.Message}");
+            }
+        }
+
+        private static void MarkSurvivingItemsAsPersisted()
+        {
+            try
+            {
+                foreach (var g in UnityEngine.Object.FindObjectsOfType<GrabbableObject>())
+                {
+                    try
+                    {
+                        if (g != null && IsShipItem(g))
+                            g.scrapPersistedThroughRounds = true;
+                    }
+                    catch (Exception ex)
+                    {
+                        Plugin.Log.LogDebug($"Skipped persist flag for item: {ex.Message}");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Plugin.Log.LogWarning($"Could not flag surviving items: {ex.Message}");
+            }
+        }
+
         private static void DespawnFacilityItems()
         {
             try
@@ -415,28 +518,60 @@ namespace ConfigurableQuota.Patches
                 var allGrab = UnityEngine.Object.FindObjectsOfType<GrabbableObject>();
                 if (allGrab == null || allGrab.Length == 0) return;
 
-                var protectedByStorage = SelfSortingStorageCompat.GetStoredItems();
-                var shipItems = allGrab.Where(g => IsShipItem(g) && !protectedByStorage.Contains(g)).ToArray();
+                var storageSlots = SelfSortingStorageCompat.GetSlots();
+                var storedLive = new HashSet<GrabbableObject>(storageSlots.Select(s => s.Live));
+
+                var shipItems = allGrab.Where(g => IsShipItem(g) && !storedLive.Contains(g)).ToArray();
                 var shipScrap = shipItems.Where(g => g.itemProperties.isScrap).ToArray();
                 var shipEquip = shipItems.Where(g => !g.itemProperties.isScrap && !IsBodyOrBlacklisted(g)).ToArray();
-                int shipScrapBeforeLoss = SumScrapValue(shipScrap);
 
-                if (ConfigManager.ValueLossEnabled.Value && shipScrap.Length > 0)
+                var storedScrap = storageSlots.Where(s => s.IsScrap).ToList();
+                var storedEquip = storageSlots.Where(s => !s.IsScrap && !IsBodyOrBlacklisted(s.Live)).ToList();
+
+                int shipScrapBeforeLoss = SumScrapValue(shipScrap) + SumStoredValues(storedScrap);
+
+                bool scrapInsured = ScrapInsuranceCompat.IsScrapInsured();
+                if (scrapInsured)
+                    Plugin.Log.LogInfo("Scrap Insurance is active, collected scrap is protected from this crew wipe.");
+
+                if (ConfigManager.ValueLossEnabled.Value && !scrapInsured)
                 {
-                    ApplyValueLoss(shipScrap);
+                    var valueTargets = shipScrap.Concat(storedScrap.Select(s => s.Live)).ToArray();
+                    if (valueTargets.Length > 0)
+                    {
+                        ApplyValueLoss(valueTargets);
+
+                        float keptFraction = 1f - Mathf.Clamp01(ConfigManager.ValueLossPercent.Value);
+                        foreach (var slot in storedScrap)
+                            SelfSortingStorageCompat.ScaleValues(slot, keptFraction);
+                    }
                 }
 
-                if (ConfigManager.ScrapLossEnabled.Value && shipScrap.Length > 0)
+                if (ConfigManager.ScrapLossEnabled.Value && !scrapInsured)
                 {
-                    SelectAndRemoveScrap(shipScrap);
+                    int budget = ResolveLossBudget(ConfigManager.MaxLostScrapItems.Value);
+                    budget = SelectAndRemoveScrap(shipScrap, budget);
+                    SelectAndRemoveStoredItems(
+                        storedScrap,
+                        budget,
+                        Mathf.Clamp01(ConfigManager.ItemsSafeChance.Value),
+                        Mathf.Clamp01(ConfigManager.LoseEachScrapChance.Value),
+                        "scrap");
                 }
 
-                if (ConfigManager.EquipmentLossEnabled.Value && shipEquip.Length > 0)
+                if (ConfigManager.EquipmentLossEnabled.Value)
                 {
-                    SelectAndRemoveEquipment(shipEquip);
+                    int budget = ResolveLossBudget(ConfigManager.MaxLostEquipmentItems.Value);
+                    budget = SelectAndRemoveEquipment(shipEquip, budget);
+                    SelectAndRemoveStoredItems(
+                        storedEquip,
+                        budget,
+                        0f,
+                        Mathf.Clamp01(ConfigManager.LoseEachEquipmentChance.Value),
+                        "equipment");
                 }
 
-                int shipScrapAfterLoss = SumCurrentShipScrapValue(shipScrap);
+                int shipScrapAfterLoss = SumCurrentShipScrapValue(shipScrap) + SumStoredValues(storedScrap);
                 CacheScrapLossSummary(shipScrapBeforeLoss, shipScrapAfterLoss);
                 NetworkSync.SyncScrapLossSummaryToClients(shipScrapBeforeLoss, shipScrapAfterLoss);
 
@@ -521,9 +656,84 @@ namespace ConfigurableQuota.Patches
             catch { return false; }
         }
 
-        private static void SelectAndRemoveScrap(GrabbableObject[] scrapItems)
+        private static int ResolveLossBudget(int configured)
         {
-            int maxRemove = Mathf.Max(0, ConfigManager.MaxLostScrapItems.Value);
+            int value = Mathf.Max(0, configured);
+            return value == 0 ? int.MaxValue : value;
+        }
+
+        private static int SumStoredValues(IEnumerable<StorageSlot> slots)
+        {
+            int total = 0;
+
+            foreach (var slot in slots)
+                total += SelfSortingStorageCompat.SumValues(slot);
+
+            return total;
+        }
+
+        private static int SelectAndRemoveStoredItems(
+            List<StorageSlot> slots,
+            int budget,
+            float safeChance,
+            float loseChance,
+            string label)
+        {
+            if (slots.Count == 0) return budget;
+
+            int eligible = 0;
+            int removedCount = 0;
+            List<string> removedNames = new();
+
+            foreach (var slot in slots)
+            {
+                try
+                {
+                    if (slot?.Live == null || slot.Count == 0) continue;
+
+                    int lostFromSlot = 0;
+
+                    for (int i = 0; i < slot.Count; i++)
+                    {
+                        eligible++;
+
+                        if (removedCount + lostFromSlot >= budget) continue;
+
+                        if (safeChance > 0f && UnityEngine.Random.value < safeChance) continue;
+
+                        if (UnityEngine.Random.value < loseChance)
+                            lostFromSlot++;
+                    }
+
+                    if (lostFromSlot == 0) continue;
+
+                    string itemName = slot.Live.itemProperties != null
+                        ? slot.Live.itemProperties.itemName
+                        : slot.Live.name;
+
+                    bool emptied = SelfSortingStorageCompat.RemoveItems(slot, lostFromSlot);
+
+                    removedCount += lostFromSlot;
+                    for (int i = 0; i < lostFromSlot; i++)
+                        removedNames.Add(itemName);
+
+                    if (emptied)
+                        DespawnObject(slot.Live);
+                }
+                catch (Exception ex)
+                {
+                    Plugin.Log.LogDebug($"Skipped stored {label} removal: {ex.Message}");
+                }
+            }
+
+            if (eligible > 0)
+                Plugin.Log.LogInfo($"Stored {label} removed: {removedCount}/{eligible} [{string.Join(", ", removedNames)}].");
+
+            return Mathf.Max(0, budget - removedCount);
+        }
+
+        private static int SelectAndRemoveScrap(GrabbableObject[] scrapItems, int budget)
+        {
             float safeChance = Mathf.Clamp01(ConfigManager.ItemsSafeChance.Value);
             float loseChance = Mathf.Clamp01(ConfigManager.LoseEachScrapChance.Value);
 
@@ -539,7 +749,7 @@ namespace ConfigurableQuota.Patches
 
                     eligible++;
 
-                    if (maxRemove > 0 && removedCount >= maxRemove) continue;
+                    if (removedCount >= budget) continue;
 
                     if (UnityEngine.Random.value < safeChance) continue;
 
@@ -557,11 +767,11 @@ namespace ConfigurableQuota.Patches
             }
 
             Plugin.Log.LogInfo($"Scrap items removed: {removedCount}/{eligible} [{string.Join(", ", removedNames)}].");
+            return Mathf.Max(0, budget - removedCount);
         }
 
-        private static void SelectAndRemoveEquipment(GrabbableObject[] equipItems)
+        private static int SelectAndRemoveEquipment(GrabbableObject[] equipItems, int budget)
         {
-            int maxRemove = Mathf.Max(0, ConfigManager.MaxLostEquipmentItems.Value);
             float loseChance = Mathf.Clamp01(ConfigManager.LoseEachEquipmentChance.Value);
 
             int eligible = 0;
@@ -576,7 +786,7 @@ namespace ConfigurableQuota.Patches
 
                     eligible++;
 
-                    if (maxRemove > 0 && removedCount >= maxRemove) continue;
+                    if (removedCount >= budget) continue;
 
                     if (UnityEngine.Random.value < loseChance)
                     {
@@ -592,6 +802,7 @@ namespace ConfigurableQuota.Patches
             }
 
             Plugin.Log.LogInfo($"Equipment items removed: {removedCount}/{eligible} [{string.Join(", ", removedNames)}].");
+            return Mathf.Max(0, budget - removedCount);
         }
 
         private static void ApplyValueLoss(GrabbableObject[] scrapItems)
