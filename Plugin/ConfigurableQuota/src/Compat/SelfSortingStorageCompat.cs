@@ -275,9 +275,6 @@ namespace ConfigurableQuota.Compat
                     && _dataIdField != null
                     && _dataValuesField != null
                     && _retrieveDataMethod != null;
-
-                if (!_reflectionReady)
-                    Plugin.Log.LogWarning("SSS is present but its cupboard layout was not recognised, stored items are eft untouched by crew wipe losses.");
             }
             catch (Exception e)
             {

@@ -221,4 +221,3 @@ namespace ConfigurableQuota.Patches
         }
     }
 }
-
