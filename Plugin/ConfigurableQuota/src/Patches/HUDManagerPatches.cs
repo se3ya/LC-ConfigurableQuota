@@ -123,7 +123,7 @@ namespace ConfigurableQuota.Patches
 
         [HarmonyPatch("ApplyPenalty")]
         [HarmonyPrefix]
-        private static bool ApplyPenalty_Prefix() => false;
+        private static bool ApplyPenalty_Prefix() => !ConfigManager.CreditPenaltiesEnabled.Value;
 
         [HarmonyPatch("ApplyPenalty")]
         [HarmonyPostfix]
@@ -134,8 +134,17 @@ namespace ConfigurableQuota.Patches
                 var (dead, total, recovered) = ResolvePenaltyCounts(playersDead, bodiesInsured);
                 bool atCompany = PenaltyHelpers.IsOnGordion();
 
-                var (creditPct, creditLoss) = ComputeCreditPenalty(dead, total, recovered, atCompany);
                 var (quotaPct, quotaDelta) = ComputeQuotaPenalty(dead, total, recovered, atCompany);
+
+                if (!ConfigManager.CreditPenaltiesEnabled.Value)
+                {
+                    if (quotaPct > 0f)
+                        __instance.statsUIElements.penaltyAddition.text += $"\n\nQuota: {Mathf.RoundToInt(quotaPct * 100)}% (${quotaDelta})";
+
+                    return;
+                }
+
+                var (creditPct, creditLoss) = ComputeCreditPenalty(dead, total, recovered, atCompany);
 
                 __instance.statsUIElements.penaltyAddition.text = BuildPenaltyText(dead, recovered, creditPct, quotaPct, quotaDelta);
                 __instance.statsUIElements.penaltyTotal.text = creditLoss > 0 ? $"DUE: ${creditLoss}" : "";
