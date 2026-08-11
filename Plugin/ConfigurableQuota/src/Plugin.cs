@@ -14,6 +14,8 @@ namespace ConfigurableQuota
   [BepInDependency(ModGUIDs.LLL_GUID, BepInDependency.DependencyFlags.SoftDependency)]
   [BepInDependency(ModGUIDs.LUNAR_CONFIG_GUID, BepInDependency.DependencyFlags.SoftDependency)]
   [BepInDependency(ModGUIDs.SELF_SORTING_STORAGE_GUID, BepInDependency.DependencyFlags.SoftDependency)]
+  [BepInDependency(ModGUIDs.MORE_SHIP_UPGRADES_GUID, BepInDependency.DependencyFlags.SoftDependency)]
+  [BepInDependency(ModGUIDs.SCRAP_INSURANCE_GUID, BepInDependency.DependencyFlags.SoftDependency)]
   public class Plugin : BaseUnityPlugin
   {
     private readonly Harmony _harmony = new(MyPluginInfo.PLUGIN_GUID);
@@ -35,6 +37,8 @@ namespace ConfigurableQuota
       NetworkSync.Initialize();
 
       _harmony.PatchAll();
+
+      SelfSortingStorageWipePatch.TryPatch(_harmony);
 
       OpenLibEventBridge.TrySubscribe();
 
