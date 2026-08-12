@@ -10,21 +10,40 @@ namespace ConfigurableQuota.Compat
     {
         private const string LifeInsuranceTypeName = "MoreShipUpgrades.UpgradeComponents.TierUpgrades.Ship.LifeInsurance";
         private const string ReduceCreditCostMethodName = "ReduceCreditCostPercentage";
+        private const string ScrapKeeperTypeName = "MoreShipUpgrades.UpgradeComponents.TierUpgrades.Items.ScrapKeeper";
+        private const string CanKeepScrapMethodName = "CanKeepScrapBasedOnChance";
 
         private static MethodInfo? _reduceCreditCost;
+        private static MethodInfo? _canKeepScrap;
         private static bool _reflectionReady;
         private static bool _reflectionAttempted;
 
         internal static bool IsInstalled => Chainloader.PluginInfos.ContainsKey(ModGUIDs.MORE_SHIP_UPGRADES_GUID);
 
+        internal static bool CanKeepScrap(GrabbableObject item)
+        {
+            if (item == null || !IsInstalled || !EnsureReflectionReady() || _canKeepScrap == null)
+                return false;
+
+            try
+            {
+                return _canKeepScrap.Invoke(null, new object[] { item }) is true;
+            }
+            catch (Exception e)
+            {
+                Plugin.Log.LogDebug($"Could not read Scrap Keeper status: {e.Message}");
+                return false;
+            }
+        }
+
         internal static float ApplyLifeInsurance(float creditPenaltyPercent)
         {
-            if (creditPenaltyPercent <= 0f || !IsInstalled || !EnsureReflectionReady())
+            if (creditPenaltyPercent <= 0f || !IsInstalled || !EnsureReflectionReady() || _reduceCreditCost == null)
                 return creditPenaltyPercent;
 
             try
             {
-                object? reduced = _reduceCreditCost!.Invoke(null, new object[] { creditPenaltyPercent });
+                object? reduced = _reduceCreditCost.Invoke(null, new object[] { creditPenaltyPercent });
                 if (reduced is not float value)
                     return creditPenaltyPercent;
 
@@ -49,7 +68,10 @@ namespace ConfigurableQuota.Compat
                 Type? lifeInsurance = AccessTools.TypeByName(LifeInsuranceTypeName);
                 _reduceCreditCost = AccessTools.Method(lifeInsurance, ReduceCreditCostMethodName, new[] { typeof(float) });
 
-                _reflectionReady = _reduceCreditCost != null;
+                Type? scrapKeeper = AccessTools.TypeByName(ScrapKeeperTypeName);
+                _canKeepScrap = AccessTools.Method(scrapKeeper, CanKeepScrapMethodName, new[] { typeof(GrabbableObject) });
+
+                _reflectionReady = _reduceCreditCost != null || _canKeepScrap != null;
             }
             catch (Exception e)
             {
