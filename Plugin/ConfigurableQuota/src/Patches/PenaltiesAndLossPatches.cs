@@ -77,14 +77,15 @@ namespace ConfigurableQuota.Patches
             catch { return false; }
         }
 
-        public static bool IsOnGordion()
+        public static bool IsAtCompany()
         {
             try
             {
                 var level = StartOfRound.Instance?.currentLevel;
                 if (level == null) return false;
 
-                return level.sceneName == "CompanyBuilding";
+                return level.sceneName == "CompanyBuilding"
+                    || (!level.planetHasTime && !level.spawnEnemiesAndScrap);
             }
             catch { return false; }
         }
@@ -180,7 +181,7 @@ namespace ConfigurableQuota.Patches
                 CachedQuotaPenaltyDelta = 0;
                 ClearScrapLossSummary();
 
-                bool atCompany = PenaltyHelpers.IsOnGordion();
+                bool atCompany = PenaltyHelpers.IsAtCompany();
                 var (dead, total, recovered) = PenaltyHelpers.CountDeathsAndRecovered();
 
                 if (!despawnAllItems && !atCompany && dead >= total && !_lossesAppliedThisRound)
@@ -240,7 +241,7 @@ namespace ConfigurableQuota.Patches
 
                 CachePenaltyCounts(dead, total, recovered);
 
-                bool atCompany = PenaltyHelpers.IsOnGordion();
+                bool atCompany = PenaltyHelpers.IsAtCompany();
 
                 if (ConfigManager.CreditPenaltiesEnabled.Value && (!atCompany || ConfigManager.CreditPenaltiesOnGordion.Value))
                 {
@@ -739,6 +740,7 @@ namespace ConfigurableQuota.Patches
 
             int eligible = 0;
             int removedCount = 0;
+            int keptByUpgrade = 0;
             List<string> removedNames = new();
 
             foreach (var g in scrapItems)
@@ -755,6 +757,12 @@ namespace ConfigurableQuota.Patches
 
                     if (UnityEngine.Random.value < loseChance)
                     {
+                        if (MoreShipUpgradesCompat.CanKeepScrap(g))
+                        {
+                            keptByUpgrade++;
+                            continue;
+                        }
+
                         DespawnObject(g);
                         removedCount++;
                         removedNames.Add(g.itemProperties.itemName);
@@ -767,6 +775,10 @@ namespace ConfigurableQuota.Patches
             }
 
             Plugin.Log.LogInfo($"Scrap items removed: {removedCount}/{eligible} [{string.Join(", ", removedNames)}].");
+
+            if (keptByUpgrade > 0)
+                Plugin.Log.LogInfo($"Scrap Keeper saved {keptByUpgrade} scrap from this crew wipe.");
+
             return Mathf.Max(0, budget - removedCount);
         }
 

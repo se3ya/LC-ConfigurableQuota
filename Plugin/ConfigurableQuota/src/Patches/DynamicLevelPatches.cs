@@ -115,7 +115,7 @@ namespace ConfigurableQuota.Patches
             level = rm?.currentLevel!;
             if (level == null) return false;
             if (ConfigManager.DisableQuota.Value) return false;
-            if (PenaltyHelpers.IsOnGordion()) return false;
+            if (PenaltyHelpers.IsAtCompany()) return false;
             return true;
         }
 

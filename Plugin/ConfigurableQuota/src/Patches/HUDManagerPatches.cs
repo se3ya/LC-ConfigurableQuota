@@ -132,7 +132,7 @@ namespace ConfigurableQuota.Patches
             try
             {
                 var (dead, total, recovered) = ResolvePenaltyCounts(playersDead, bodiesInsured);
-                bool atCompany = PenaltyHelpers.IsOnGordion();
+                bool atCompany = PenaltyHelpers.IsAtCompany();
 
                 var (quotaPct, quotaDelta) = ComputeQuotaPenalty(dead, total, recovered, atCompany);
 
