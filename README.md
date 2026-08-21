@@ -19,6 +19,7 @@
 - Configure player count scaling with threshold, cap and per player multiplier
 - Configure rollover which transfers any extra fulfilment to the next quota
 - Configure randomized deadline
+- Configure deadline days that grow with the quota by credit interval or by exact thresholds
 - Configure credit penalties when crew members die
 - Configure quota penalties when crew members die
 - Configure randomly lost scrap items on a full crew wipe
@@ -47,6 +48,10 @@
 - **Deadline Min** - Minimum days when random deadline is enabled
 - **Deadline Max** - Maximum days when random deadline is enabled
 - **Deadline Must Change** - Forces the next random deadline to differ from the previous one
+- **Enable Deadline Bonus** - Adds extra deadline days as the quota grows
+- **Deadline Bonus Per Quota** - Credits of quota needed per extra day. 1000 gives +1 day at 1000. REQUIRES `EnableDeadlineBonus`
+- **Deadline Bonus Thresholds** - Exact quota values that each grant one day, comma separated. Overrides interval whenever it is set. REQUIRES `EnableDeadlineBonus`
+- **Deadline Bonus Max** - Maximum days the bonus can add. 0 for no limit. REQUIRES `EnableDeadlineBonus`
 - **Base Increase** - Base amount the quota goes up each quota
 - **Curve Sharpness** - Controls how fast the quota scales. Higher = slower growth
 - **Randomizer Multiplier** - Adds variation to quota increases. 0 = no randomness, 1 = vanilla variance
@@ -67,6 +72,31 @@ randomFactor ∈ [1 - 0.5*RandomizerMultiplier, 1 + 0.5*RandomizerMultiplier]
 | 3     | 100 × (1 + 9/16) ≈ 156  | ~156 ± 78    | ~517                         |
 | 4     | 100 × (1 + 16/16) ≈ 200 | ~200 ± 100   | ~717                         |
 | 5     | 100 × (1 + 25/16) ≈ 256 | ~256 ± 128   | ~973                         |
+
+**Deadline bonus formula** (only active when `EnableDeadlineBonus` is on):
+
+```
+interval mode:  bonus = floor(quota / DeadlineBonusPerQuota)
+threshold mode: bonus = how many DeadlineBonusThresholds values the quota has reached
+deadline        = baseDeadline + min(bonus, DeadlineBonusMax)
+```
+
+Thresholds override the interval whenever they are set. `DeadlineBonusMax = 0` removes the cap.
+Bonus is added on top of whatever the base deadline resolves to, including randomized and
+per constellation deadlines.
+
+**Example** with defaults (`DeadlineBonusPerQuota=1000`, `DeadlineBonusMax=3`, `DaysToDeadline=3`):
+
+| Quota | Bonus | Deadline        |
+|:-----:|:-----:|:---------------:|
+| 973   | +0    | 3 days          |
+| 1298  | +1    | 4 days          |
+| 2204  | +2    | 5 days          |
+| 3535  | +3    | 6 days          |
+| 5391  | +3    | 6 days (capped) |
+
+With `DeadlineBonusThresholds=1000,2500,5000` instead, the same run gives +1 at 1298, +2 at 2810
+and +3 at 5391.
 
 ### **1. Leveling**
 
@@ -387,6 +417,8 @@ A separate `com.seeya.configurablequota_constellations.cfg` is auto-generated on
 - **DeadlineMode** - `UseGlobal`, `Fixed`, or `Random`
 - **FixedDaysToDeadline** - Used when set to `Fixed`
 - **DeadlineMin / DeadlineMax** - Used when set to `Random`
+
+Any deadline bonus from `EnableDeadlineBonus` is added on top of the constellation's own deadline.
 
 ---
 
