@@ -11,7 +11,6 @@
     </PropertyGroup>
 
     <PropertyGroup>
-        <Version>1.5.1</Version>
         <BepInExPluginGuid>com.seeya.configurablequota</BepInExPluginGuid>
         <BepInExPluginName>Configurable Quota</BepInExPluginName>
     </PropertyGroup>
@@ -33,5 +32,12 @@
 
       <Reference Include="OpenLib"><HintPath>libs/OpenLib.dll</HintPath><Private>false</Private></Reference>
     </ItemGroup>
+
+  <Target Name="DeployToProfile" AfterTargets="PostBuildEvent" Condition="'$(DeployDir)' != ''">
+    	<MakeDir Directories="$(DeployDir)" Condition="!Exists('$(DeployDir)')" />
+    	<Copy SourceFiles="$(TargetDir)ConfigurableQuota.dll" DestinationFolder="$(DeployDir)" />
+    	<Copy SourceFiles="@(_DeployBundle)" DestinationFolder="$(DeployDir)" SkipUnchangedFiles="true" Condition="'@(_DeployBundle)' != ''" />
+    	<Message Importance="high" Text="[ConfigurableQuota] Deployed ConfigurableQuota.dll -&gt; $(DeployDir)" />
+  </Target>
 
 </Project>
