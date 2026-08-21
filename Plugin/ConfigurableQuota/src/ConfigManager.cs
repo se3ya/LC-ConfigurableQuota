@@ -54,6 +54,10 @@ namespace ConfigurableQuota
         public static ConfigEntry<int> DeadlineMin = null!;
         public static ConfigEntry<int> DeadlineMax = null!;
         public static ConfigEntry<bool> DeadlineMustChange = null!;
+        public static ConfigEntry<bool> EnableDeadlineBonus = null!;
+        public static ConfigEntry<int> DeadlineBonusPerQuota = null!;
+        public static ConfigEntry<int> DeadlineBonusMax = null!;
+        public static ConfigEntry<string> DeadlineBonusThresholds = null!;
 
         public static ConfigEntry<bool> EnableGrowthDampening = null!;
         public static ConfigEntry<int> DampeningStartAt = null!;
@@ -157,6 +161,30 @@ namespace ConfigurableQuota
                 "DeadlineMustChange",
                 true,
                 "After fulfilling a quota, next random deadline has to be different from the previous one. REQUIRES 'Randomize Deadline' SET TO TRUE."
+            );
+            EnableDeadlineBonus = config.Bind(
+                "0. Basic",
+                "EnableDeadlineBonus",
+                false,
+                "Increase deadline as quota grows using either fixed credit interval or exact thresholds."
+            );
+            DeadlineBonusPerQuota = config.Bind(
+                "0. Basic",
+                "DeadlineBonusPerQuota",
+                1000,
+                "Add one day to deadline for every this many credits of quota. 1000 means 1000 quota gets +1 day, 2000 gets +2 and so on. REQUIRES 'Enable Deadline Bonus' SET TO TRUE."
+            );
+            DeadlineBonusMax = config.Bind(
+                "0. Basic",
+                "DeadlineBonusMax",
+                3,
+                "Maximum days quota bonus can add on top of deadline. 0 means no limit. Applies to both interval and thresholds. REQUIRES 'Enable Deadline Bonus' SET TO TRUE."
+            );
+            DeadlineBonusThresholds = config.Bind(
+                "0. Basic",
+                "DeadlineBonusThresholds",
+                "",
+                "Exact quota thresholds instead of fixed interval, comma separated. Example - 1000,2500,5000 adds one day at each one reached. Overrides 'Deadline Bonus Per Quota' whenever it is set. REQUIRES 'Enable Deadline Bonus' SET TO TRUE."
             );
 
             BaseIncrease = config.Bind(
