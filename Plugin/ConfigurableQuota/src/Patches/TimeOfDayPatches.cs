@@ -14,6 +14,8 @@ namespace ConfigurableQuota.Patches
         private static bool _initialDeadlineApplied;
         private static bool _initialDeadlineWasConstellationSpecific;
         private static bool _loggedPlayerCapAutofix;
+        private static int[]? _bonusThresholds;
+        private static string? _bonusThresholdsRaw;
 
         internal static int LastAppliedRollover;
 
@@ -62,7 +64,7 @@ namespace ConfigurableQuota.Patches
                 if (ConfigManager.DisableQuota.Value)
                 {
                     ___profitQuota = Mathf.Max(0, ConfigManager.StartingQuota.Value);
-                    SetDeadlineTimer(___totalTime, ref ___daysUntilDeadline, ref ___timeUntilDeadline);
+                    SetDeadlineTimer(___totalTime, ref ___daysUntilDeadline, ref ___timeUntilDeadline, quota: ___profitQuota);
                     return false;
                 }
 
@@ -99,7 +101,8 @@ namespace ConfigurableQuota.Patches
                     ref ___daysUntilDeadline,
                     ref ___timeUntilDeadline,
                     prevDays: daysLeftAtFulfill,
-                    logSelection: true
+                    logSelection: true,
+                    quota: ___profitQuota
                 );
 
                 __instance.quotaVariables.deadlineDaysAmount = deadline;
@@ -213,15 +216,16 @@ namespace ConfigurableQuota.Patches
             return Mathf.RoundToInt(overage * Mathf.Clamp01(rolloverAmt));
         }
 
-        private static int SetDeadlineTimer(float dayDuration, ref int days, ref float timeUntilDeadline, int prevDays = -1, bool logSelection = false)
+        private static int SetDeadlineTimer(float dayDuration, ref int days, ref float timeUntilDeadline, int prevDays = -1, bool logSelection = false, int quota = 0)
         {
-            DeadlineSelection selection = ResolveDeadlineSelection(prevDays);
-            int d = selection.Days;
+            int bonus = ResolveDeadlineBonus(quota);
+            DeadlineSelection selection = ResolveDeadlineSelection(prevDays >= 0 ? prevDays - bonus : prevDays);
+            int d = selection.Days + bonus;
             days = d;
             timeUntilDeadline = d * dayDuration;
 
             if (logSelection)
-                Plugin.Log.LogInfo($"Deadline selected ({selection.Source}): {d} day(s).");
+                Plugin.Log.LogInfo($"Deadline selected ({selection.Source}{DescribeDeadlineBonus(bonus)}): {d} days.");
 
             return d;
         }
@@ -340,7 +344,8 @@ namespace ConfigurableQuota.Patches
             if (!shouldApply)
                 return false;
 
-            int deadlineDays = selection.Days;
+            int bonus = ResolveDeadlineBonus(ConfigManager.StartingQuota.Value);
+            int deadlineDays = selection.Days + bonus;
 
             if (instance.quotaVariables != null)
                 instance.quotaVariables.deadlineDaysAmount = deadlineDays;
@@ -354,9 +359,75 @@ namespace ConfigurableQuota.Patches
                 && selection.ConstellationMode != ConstellationDeadlineMode.UseGlobal;
 
             if (logSelection)
-                Plugin.Log.LogInfo($"Initial deadline selected ({selection.Source}): {deadlineDays} day(s).");
+                Plugin.Log.LogInfo($"Initial deadline selected ({selection.Source}{DescribeDeadlineBonus(bonus)}): {deadlineDays} days.");
 
             return true;
+        }
+
+        private static int[] GetDeadlineBonusThresholds()
+        {
+            string raw = ConfigManager.DeadlineBonusThresholds.Value ?? string.Empty;
+
+            if (_bonusThresholds != null && _bonusThresholdsRaw == raw)
+                return _bonusThresholds;
+
+            _bonusThresholdsRaw = raw;
+
+            string[] parts = raw.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
+            string[] invalid = parts
+                .Where(part => !(int.TryParse(part.Trim(), out int parsed) && parsed > 0))
+                .Select(part => part.Trim())
+                .ToArray();
+
+            if (invalid.Length > 0)
+                Plugin.Log.LogWarning($"Ignoring invalid deadline bonus thresholds: {string.Join(", ", invalid)}.");
+
+            _bonusThresholds = parts
+                .Select(part => int.TryParse(part.Trim(), out int parsed) ? parsed : 0)
+                .Where(parsed => parsed > 0)
+                .Distinct()
+                .OrderBy(parsed => parsed)
+                .ToArray();
+
+            int bonusCap = Math.Max(0, ConfigManager.DeadlineBonusMax.Value);
+            if (bonusCap > 0 && _bonusThresholds.Length > bonusCap)
+                Plugin.Log.LogWarning($"Deadline bonus has {_bonusThresholds.Length} thresholds but bonus is capped at {bonusCap} days, so highest {_bonusThresholds.Length - bonusCap} will never apply.");
+
+            return _bonusThresholds;
+        }
+
+        private static int ResolveDeadlineBonus(int quota)
+        {
+            if (!ConfigManager.EnableDeadlineBonus.Value) return 0;
+            if (quota <= 0) return 0;
+
+            int[] thresholds = GetDeadlineBonusThresholds();
+            int bonus;
+
+            if (thresholds.Length > 0)
+            {
+                bonus = 0;
+                foreach (int threshold in thresholds)
+                {
+                    if (quota < threshold) break;
+                    bonus++;
+                }
+            }
+            else
+            {
+                int interval = ConfigManager.DeadlineBonusPerQuota.Value;
+                if (interval <= 0) return 0;
+
+                bonus = quota / interval;
+            }
+
+            int max = Math.Max(0, ConfigManager.DeadlineBonusMax.Value);
+            return max > 0 ? Math.Min(bonus, max) : bonus;
+        }
+
+        private static string DescribeDeadlineBonus(int bonus)
+        {
+            return bonus > 0 ? $" +{bonus} quota bonus" : string.Empty;
         }
 
         private static DeadlineSelection ResolveDeadlineSelection(int prevDays)
@@ -531,7 +602,7 @@ namespace ConfigurableQuota.Patches
         {
             try
             {
-                SetDeadlineTimer(totalTime, ref days, ref timeUntilDeadline);
+                SetDeadlineTimer(totalTime, ref days, ref timeUntilDeadline, quota: ConfigManager.StartingQuota.Value);
 
                 var sor = StartOfRound.Instance;
                 if (sor != null)
