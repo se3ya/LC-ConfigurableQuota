@@ -57,12 +57,15 @@ namespace ConfigurableQuota.Patches
             ref int ___daysUntilDeadline,
             ref float ___totalTime)
         {
+            bool advanceStarted = false;
+
             try
             {
                 if (!__instance.IsServer) return false;
 
                 if (ConfigManager.DisableQuota.Value)
                 {
+                    advanceStarted = true;
                     ___profitQuota = Mathf.Max(0, ConfigManager.StartingQuota.Value);
                     SetDeadlineTimer(___totalTime, ref ___daysUntilDeadline, ref ___timeUntilDeadline, quota: ___profitQuota);
                     return false;
@@ -79,11 +82,15 @@ namespace ConfigurableQuota.Patches
                 }
 
                 int previousQuota = ___profitQuota;
+                int previousRollover = LastAppliedRollover;
+                int previousDeadline = __instance.quotaVariables != null ? __instance.quotaVariables.deadlineDaysAmount : -1;
+                advanceStarted = true;
                 ___timesFulfilledQuota++;
+                __instance.CalculateLuckValue();
 
                 int newQuota = CalculateNewQuota(previousQuota, ___timesFulfilledQuota);
 
-                int daysLeftAtFulfill = ___daysUntilDeadline;
+                int daysLeftAtFulfill = Math.Max(0, ___daysUntilDeadline);
                 int overage = ___quotaFulfilled - previousQuota;
 
                 ___profitQuota = newQuota;
@@ -100,12 +107,16 @@ namespace ConfigurableQuota.Patches
                     ___totalTime,
                     ref ___daysUntilDeadline,
                     ref ___timeUntilDeadline,
-                    prevDays: daysLeftAtFulfill,
+                    prevDays: previousDeadline,
                     logSelection: true,
                     quota: ___profitQuota
                 );
 
-                __instance.quotaVariables.deadlineDaysAmount = deadline;
+                if (__instance.quotaVariables != null)
+                    __instance.quotaVariables.deadlineDaysAmount = deadline;
+
+                RefreshLuckyFurniture(__instance);
+                __instance.hasShownAdThisQuota = false;
 
                 __instance.SyncNewProfitQuotaClientRpc(___profitQuota, overtimeBonus, ___timesFulfilledQuota);
 
@@ -115,18 +126,26 @@ namespace ConfigurableQuota.Patches
                 ___timeUntilDeadline = ___totalTime * deadline;
 
                 NetworkSync.SyncDeadlineToClients(deadline);
-                if (appliedRollover > 0)
-                    NetworkSync.SyncRolloverToClients(appliedRollover);
+                NetworkSync.SyncRolloverToClients(appliedRollover);
 
                 Plugin.Log.LogInfo(
                     $"Quota {___timesFulfilledQuota}: {previousQuota} -> {newQuota}, deadline {deadline} days, rollover {appliedRollover}, overtime {overtimeBonus} credits.");
+
+                if (ConfigManager.RolloverAmount.Value > 0f && previousRollover >= previousQuota && appliedRollover < newQuota)
+                {
+                    Plugin.Log.LogInfo($"Rollover no longer covers the quota, {newQuota - appliedRollover} has to be sold within {deadline} days.");
+                    NetworkSync.ReportRolloverStatus(appliedRollover, newQuota, deadline);
+                }
 
                 return false;
             }
             catch (Exception e)
             {
-                Plugin.Log.LogError($"Could not calculate the next quota: {e.Message}");
-                return true;
+                Plugin.Log.LogError(advanceStarted
+                    ? $"Could not calculate the next quota: {e.Message}. It was already partly advanced, so it is left as it is."
+                    : $"Could not calculate the next quota: {e.Message}");
+
+                return !advanceStarted;
             }
         }
 
@@ -137,7 +156,7 @@ namespace ConfigurableQuota.Patches
 
             if (finalLevel != -1 && previousQuota >= finalLevel)
             {
-                newQuota = previousQuota + Math.Max(0, ConfigManager.FinalIncrease.Value);
+                newQuota = Mathf.RoundToInt(Mathf.Clamp((float)previousQuota + Math.Max(0, ConfigManager.FinalIncrease.Value), 0f, 1E+09f));
             }
             else
             {
@@ -174,7 +193,7 @@ namespace ConfigurableQuota.Patches
             }
 
             int cap = ConfigManager.QuotaCap.Value;
-            return cap != -1 ? Mathf.Min(newQuota, cap) : newQuota;
+            return cap > 0 ? Mathf.Min(newQuota, cap) : newQuota;
         }
 
         private static float CalculatePlayerMultiplier()
@@ -191,15 +210,13 @@ namespace ConfigurableQuota.Patches
             int cap = ConfigManager.PlayerCap.Value;
             if (cap <= threshold)
             {
-                int fixedCap = threshold + 1;
-                ConfigManager.PlayerCap.Value = fixedCap;
-                cap = fixedCap;
+                cap = threshold + 1;
 
                 if (!_loggedPlayerCapAutofix)
                 {
                     _loggedPlayerCapAutofix = true;
                     Plugin.Log.LogWarning(
-                        $"Player scaling config was invalid (PlayerCap <= PlayerThreshold). Auto-fixed PlayerCap to {fixedCap}.");
+                        $"Player scaling config is invalid, PlayerCap is not above PlayerThreshold. Using {cap} for this session.");
                 }
             }
 
@@ -207,6 +224,22 @@ namespace ConfigurableQuota.Patches
             extraPlayers = Mathf.Clamp(extraPlayers, 0, maxExtra);
 
             return 1f + (extraPlayers * Mathf.Max(0f, ConfigManager.MultPerPlayer.Value));
+        }
+
+        private static void RefreshLuckyFurniture(TimeOfDay instance)
+        {
+            var unlockables = StartOfRound.Instance != null ? StartOfRound.Instance.unlockablesList : null;
+            if (instance.furniturePlacedAtQuotaStart == null || unlockables == null) return;
+
+            instance.furniturePlacedAtQuotaStart.Clear();
+
+            foreach (var parented in UnityEngine.Object.FindObjectsByType<AutoParentToShip>(FindObjectsSortMode.None))
+            {
+                int id = parented.unlockableID;
+                if (id < 0 || id >= unlockables.unlockables.Count) continue;
+                if (unlockables.unlockables[id].spawnPrefab)
+                    instance.furniturePlacedAtQuotaStart.Add(id);
+            }
         }
 
         private static int CalculateRollover(int overage)
@@ -267,13 +300,18 @@ namespace ConfigurableQuota.Patches
                 string quotaPenalty = ConfigManager.QuotaPenaltiesEnabled.Value
                     ? $"quota={ConfigManager.QuotaPenaltyPercentPerPlayer.Value:P0}/player (cap {ConfigManager.QuotaPenaltyPercentCap.Value:P0})"
                     : "quota=off";
+                string rollover = ConfigManager.RolloverAmount.Value > 0f
+                    ? $"rollover={ConfigManager.RolloverAmount.Value:P0}"
+                        + (ConfigManager.RolloverWipePenalty.Value > 0f ? $" (wipe -{ConfigManager.RolloverWipePenalty.Value:P0})" : "")
+                        + (ConfigManager.OvertimeExcludesRollover.Value ? ", overtime excludes it" : "")
+                    : "rollover=off";
                 string losses =
                     $"scrap={ConfigManager.ScrapLossEnabled.Value}" +
                     $", value={ConfigManager.ValueLossEnabled.Value}({ConfigManager.ValueLossPercent.Value:P0})" +
                     $", equip={ConfigManager.EquipmentLossEnabled.Value}";
 
                 Plugin.Log.LogInfo(
-                    $"Settings loaded: quota start {ConfigManager.StartingQuota.Value}, base +{ConfigManager.BaseIncrease.Value}/cycle, sharpness {ConfigManager.CurveSharpness.Value}{quotaCap}{finalLevel}; deadline {deadlineDesc}; credits start {ConfigManager.StartingCredits.Value}; penalties [{creditPenalty}, {quotaPenalty}]; losses [{losses}].");
+                    $"Settings loaded: quota start {ConfigManager.StartingQuota.Value}, base +{ConfigManager.BaseIncrease.Value}/cycle, sharpness {ConfigManager.CurveSharpness.Value}{quotaCap}{finalLevel}; deadline {deadlineDesc}; credits start {ConfigManager.StartingCredits.Value}; {rollover}; penalties [{creditPenalty}, {quotaPenalty}]; losses [{losses}].");
             }
 
             if (Chainloader.PluginInfos.ContainsKey("ShaosilGaming.GeneralImprovements"))
