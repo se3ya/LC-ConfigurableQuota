@@ -15,7 +15,7 @@ namespace ConfigurableQuota.Patches
         public static (int dead, int total, int recovered) CountDeathsAndRecovered()
         {
             var sor = StartOfRound.Instance;
-            if (sor == null) return (0, 0, 0);
+            if (sor == null) return (0, 1, 0);
 
             int dead = 0;
             int total = 0;
@@ -45,7 +45,7 @@ namespace ConfigurableQuota.Patches
 
                     foreach (var r in _ragdollCache)
                     {
-                        if (r?.GetComponent<DeadBodyInfo>()?.playerScript == player)
+                        if (r != null && r.GetComponent<DeadBodyInfo>()?.playerScript == player)
                         {
                             ragdoll = r;
                             break;
@@ -77,6 +77,9 @@ namespace ConfigurableQuota.Patches
             catch { return false; }
         }
 
+        private static SelectableLevel? _classifiedLevel;
+        private static bool _classifiedIsCompany;
+
         public static bool IsAtCompany()
         {
             try
@@ -84,10 +87,58 @@ namespace ConfigurableQuota.Patches
                 var level = StartOfRound.Instance?.currentLevel;
                 if (level == null) return false;
 
-                return level.sceneName == "CompanyBuilding"
-                    || (!level.planetHasTime && !level.spawnEnemiesAndScrap);
+                if (!ReferenceEquals(level, _classifiedLevel))
+                {
+                    _classifiedLevel = level;
+                    _classifiedIsCompany = ClassifyCompanyMoon(level);
+                }
+
+                return _classifiedIsCompany;
             }
             catch { return false; }
+        }
+
+        public static bool CreditPenaltiesApply(bool atCompany)
+            => ConfigManager.CreditPenaltiesEnabled.Value
+                && (!atCompany || ConfigManager.CreditPenaltiesOnCompanyMoons.Value);
+
+        public static bool QuotaPenaltiesApply(bool atCompany)
+            => ConfigManager.QuotaPenaltiesEnabled.Value
+                && (!atCompany || ConfigManager.QuotaPenaltiesOnCompanyMoons.Value);
+
+        private static bool ClassifyCompanyMoon(SelectableLevel level)
+        {
+            if (MatchesMoonList(level, ConfigManager.ExcludedCompanyMoons.Value)) return false;
+            if (MatchesMoonList(level, ConfigManager.ForcedCompanyMoons.Value)) return true;
+            if (level.sceneName == "CompanyBuilding") return true;
+
+            bool company = !level.planetHasTime
+                && !level.spawnEnemiesAndScrap
+                && level.maxEnemyPowerCount <= 0
+                && level.maxOutsideEnemyPowerCount <= 0;
+
+            return company;
+        }
+
+        private static bool MatchesMoonList(SelectableLevel level, string raw)
+        {
+            if (string.IsNullOrWhiteSpace(raw)) return false;
+
+            string planetName = level.PlanetName ?? string.Empty;
+            int space = planetName.IndexOf(' ');
+            string shortName = space >= 0 ? planetName.Substring(space + 1) : planetName;
+
+            foreach (var part in raw.Split(','))
+            {
+                string name = part.Trim();
+                if (name.Length == 0) continue;
+
+                if (string.Equals(name, level.sceneName, StringComparison.OrdinalIgnoreCase)) return true;
+                if (string.Equals(name, planetName, StringComparison.OrdinalIgnoreCase)) return true;
+                if (string.Equals(name, shortName, StringComparison.OrdinalIgnoreCase)) return true;
+            }
+
+            return false;
         }
 
         public static float ComputePenaltyPercent(bool dynamicMode, float percentPerPlayer, float cap, float threshold, float recoveryBonus,
@@ -129,6 +180,11 @@ namespace ConfigurableQuota.Patches
         internal static int CachedShipScrapAfterLoss;
         internal static bool HasScrapLossSummary;
         internal static bool HasAllDeadSnapshot;
+
+        internal static void ResetCreditSchedule()
+        {
+            _creditScheduled = false;
+        }
 
         internal static void CachePenaltyCounts(int dead, int total, int recovered)
         {
@@ -172,6 +228,8 @@ namespace ConfigurableQuota.Patches
         [HarmonyPrefix]
         private static bool DespawnPrefix(bool despawnAllItems)
         {
+            bool wipeHandled = false;
+
             try
             {
                 if (!PenaltyHelpers.IsServerSafe) return true;
@@ -184,8 +242,13 @@ namespace ConfigurableQuota.Patches
                 bool atCompany = PenaltyHelpers.IsAtCompany();
                 var (dead, total, recovered) = PenaltyHelpers.CountDeathsAndRecovered();
 
-                if (!despawnAllItems && !atCompany && dead >= total && !_lossesAppliedThisRound)
+                bool lossesAllowedHere = !atCompany || ConfigManager.ApplyLossesOnCompanyMoons.Value;
+
+                if (!despawnAllItems && lossesAllowedHere && dead > 0 && dead >= total && !_lossesAppliedThisRound)
                 {
+                    wipeHandled = true;
+                    _appliedThisRound = true;
+
                     CollectVehicleItems();
                     MarkBeltBagContentsAsShipItems();
 
@@ -200,11 +263,11 @@ namespace ConfigurableQuota.Patches
 
                     HudQuotaAnimationPatch.TryApplyAdvancedFeaturesEndscreen();
 
-                    if (ConfigManager.CreditPenaltiesEnabled.Value)
+                    if (PenaltyHelpers.CreditPenaltiesApply(atCompany))
                     {
                         ScheduleCreditPenalty(dead, total, recovered);
                     }
-                    if (ConfigManager.QuotaPenaltiesEnabled.Value)
+                    if (PenaltyHelpers.QuotaPenaltiesApply(atCompany))
                     {
                         ApplyQuotaPenalty(dead, total, recovered);
                     }
@@ -213,7 +276,6 @@ namespace ConfigurableQuota.Patches
                         ApplyRolloverWipePenalty();
                     }
 
-                    _appliedThisRound = true;
                     return false;
                 }
 
@@ -221,8 +283,11 @@ namespace ConfigurableQuota.Patches
             }
             catch (Exception e)
             {
-                Plugin.Log.LogWarning($"Error in despawn prefix: {e.Message}");
-                return true;
+                Plugin.Log.LogWarning(wipeHandled
+                    ? $"Error in despawn prefix: {e.Message}. The crew wipe was already handled, so the game is not allowed to despawn on top of it."
+                    : $"Error in despawn prefix: {e.Message}");
+
+                return !wipeHandled;
             }
         }
 
@@ -243,12 +308,12 @@ namespace ConfigurableQuota.Patches
 
                 bool atCompany = PenaltyHelpers.IsAtCompany();
 
-                if (ConfigManager.CreditPenaltiesEnabled.Value && (!atCompany || ConfigManager.CreditPenaltiesOnGordion.Value))
+                if (PenaltyHelpers.CreditPenaltiesApply(atCompany))
                 {
                     ScheduleCreditPenalty(dead, total, recovered);
                 }
 
-                if (ConfigManager.QuotaPenaltiesEnabled.Value && (!atCompany || ConfigManager.QuotaPenaltiesOnGordion.Value))
+                if (PenaltyHelpers.QuotaPenaltiesApply(atCompany))
                 {
                     ApplyQuotaPenalty(dead, total, recovered);
                 }
@@ -384,6 +449,7 @@ namespace ConfigurableQuota.Patches
 
             int newFulfilled = Mathf.Max(0, banked - cut);
             tod.quotaFulfilled = newFulfilled;
+            TimeOfDayQuotaPatch.LastAppliedRollover = Math.Min(TimeOfDayQuotaPatch.LastAppliedRollover, newFulfilled);
 
             NetworkSync.SyncRolloverToClients(newFulfilled);
 
@@ -535,15 +601,27 @@ namespace ConfigurableQuota.Patches
                 if (scrapInsured)
                     Plugin.Log.LogInfo("Scrap Insurance is active, collected scrap is protected from this crew wipe.");
 
+                bool onlyCurrentRound = ConfigManager.OnlyLoseCurrentRoundLoot.Value;
+
+                var losableScrap = onlyCurrentRound
+                    ? shipScrap.Where(g => g != null && !g.scrapPersistedThroughRounds).ToArray()
+                    : shipScrap;
+                var losableStoredScrap = onlyCurrentRound
+                    ? storedScrap.Where(s => s?.Live != null && !s.Live.scrapPersistedThroughRounds).ToList()
+                    : storedScrap;
+
+                if (onlyCurrentRound)
+                    Plugin.Log.LogInfo($"Only this rounds loot can be lost, {losableScrap.Length} of {shipScrap.Length} loose scrap and {losableStoredScrap.Count} of {storedScrap.Count} stored stacks are eligible.");
+
                 if (ConfigManager.ValueLossEnabled.Value && !scrapInsured)
                 {
-                    var valueTargets = shipScrap.Concat(storedScrap.Select(s => s.Live)).ToArray();
+                    var valueTargets = losableScrap.Concat(losableStoredScrap.Select(s => s.Live)).ToArray();
                     if (valueTargets.Length > 0)
                     {
                         ApplyValueLoss(valueTargets);
 
                         float keptFraction = 1f - Mathf.Clamp01(ConfigManager.ValueLossPercent.Value);
-                        foreach (var slot in storedScrap)
+                        foreach (var slot in losableStoredScrap)
                             SelfSortingStorageCompat.ScaleValues(slot, keptFraction);
                     }
                 }
@@ -551,9 +629,9 @@ namespace ConfigurableQuota.Patches
                 if (ConfigManager.ScrapLossEnabled.Value && !scrapInsured)
                 {
                     int budget = ResolveLossBudget(ConfigManager.MaxLostScrapItems.Value);
-                    budget = SelectAndRemoveScrap(shipScrap, budget);
+                    budget = SelectAndRemoveScrap(losableScrap, budget);
                     SelectAndRemoveStoredItems(
-                        storedScrap,
+                        losableStoredScrap,
                         budget,
                         Mathf.Clamp01(ConfigManager.ItemsSafeChance.Value),
                         Mathf.Clamp01(ConfigManager.LoseEachScrapChance.Value),
@@ -899,6 +977,7 @@ namespace ConfigurableQuota.Patches
         {
             PenaltiesOnLandingPatch._appliedThisRound = false;
             PenaltiesOnLandingPatch._lossesAppliedThisRound = false;
+            PenaltiesOnLandingPatch.ResetCreditSchedule();
             PenaltiesOnLandingPatch.HasPenaltyCache = false;
             PenaltiesOnLandingPatch.HasAllDeadSnapshot = false;
             PenaltiesOnLandingPatch.CachedQuotaPenaltyDelta = 0;
