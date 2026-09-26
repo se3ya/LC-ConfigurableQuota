@@ -5,6 +5,39 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.0] - 2026-08-22
+
+### Added
+
+- Only Lose Current Round Loot, wipe only takes scrap collected that day
+- Rollover alert, ship warns you once with the amount to sell when rollover runs out. Can be disabled
+- Forced and Excluded Company Moons lists for moons detection gets wrong
+- Apply Losses On Company Moons runs loss settings at a company moon
+
+### Changed
+
+- Company moon detection needs an empty enemy budget too, so Oxyde keeps its penalties
+- Those moons now follow the loss settings on a wipe and get Dynamic scaling back
+- `OnGordion` is now `OnCompanyMoons`, existing values carry over on first launch
+- Randomizer Multiplier capped at 2, above that the quota could shrink
+
+### Fixed
+
+- Selling for negative credits after loading a save, buy rate now floors at 30%
+- Failed crew wipe letting the game despawn on top and destroy the scrap kept
+- Failed quota advance letting the game advance it twice and wipe the rollover
+- Credit and quota penalties applying at a company moon with On Company Moons off
+- Credit penalties skipped entirely there instead, so deaths at Gordion were free
+- Lucky furniture doing nothing, the luck value was never recalculated
+- Company ad only playing once per save file
+- Deadline Must Change comparing days left, so it could repeat the same deadline
+- Rollover losing the days left part of the overtime bonus every quota
+- Buy rate alert playing twice on the host
+- Quota Cap of 0 pinning the quota at 0, below 1 now means no limit
+- Quota overflowing negative with a very large Final Increase
+- Player Cap rewritten in your config file when set below Player Threshold
+- Losses running with zero deaths when the round had no player data
+
 ## [1.6.0] - 2026-08-21
 
 ### Added
