@@ -100,6 +100,29 @@ namespace ConfigurableQuota.Patches
     internal static class StartOfRoundSavedSettingsPatch
     {
         [HarmonyPostfix]
-        private static void SetTimeAndPlanetToSavedSettings_Postfix() => QuotaSaveData.Load();
+        private static void SetTimeAndPlanetToSavedSettings_Postfix()
+        {
+            QuotaSaveData.Load();
+            AlignDeadlineLength();
+        }
+
+        private static void AlignDeadlineLength()
+        {
+            try
+            {
+                var tod = TimeOfDay.Instance;
+                if (tod == null || tod.quotaVariables == null) return;
+
+                int remaining = tod.daysUntilDeadline;
+                if (remaining <= tod.quotaVariables.deadlineDaysAmount) return;
+
+                Plugin.Log.LogInfo($"Deadline length was {tod.quotaVariables.deadlineDaysAmount} days but {remaining} are left on the clock, using {remaining} so the buy rate stays sane.");
+                tod.quotaVariables.deadlineDaysAmount = remaining;
+            }
+            catch (Exception e)
+            {
+                Plugin.Log.LogWarning($"Could not align the deadline length after loading: {e.Message}");
+            }
+        }
     }
 }
