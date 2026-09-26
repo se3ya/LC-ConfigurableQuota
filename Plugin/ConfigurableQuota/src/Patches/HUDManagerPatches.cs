@@ -123,7 +123,7 @@ namespace ConfigurableQuota.Patches
 
         [HarmonyPatch("ApplyPenalty")]
         [HarmonyPrefix]
-        private static bool ApplyPenalty_Prefix() => !ConfigManager.CreditPenaltiesEnabled.Value;
+        private static bool ApplyPenalty_Prefix() => !PenaltyHelpers.CreditPenaltiesApply(PenaltyHelpers.IsAtCompany());
 
         [HarmonyPatch("ApplyPenalty")]
         [HarmonyPostfix]
@@ -172,7 +172,7 @@ namespace ConfigurableQuota.Patches
 
         private static (float pct, int loss) ComputeCreditPenalty(int dead, int total, int recovered, bool atCompany)
         {
-            if (!ConfigManager.CreditPenaltiesEnabled.Value || dead == 0 || (atCompany && !ConfigManager.CreditPenaltiesOnGordion.Value))
+            if (dead == 0 || !PenaltyHelpers.CreditPenaltiesApply(atCompany))
                 return (0f, 0);
 
             var term = UnityEngine.Object.FindObjectOfType<Terminal>();
@@ -189,7 +189,7 @@ namespace ConfigurableQuota.Patches
 
         private static (float pct, int delta) ComputeQuotaPenalty(int dead, int total, int recovered, bool atCompany)
         {
-            if (!ConfigManager.QuotaPenaltiesEnabled.Value || dead == 0 || (atCompany && !ConfigManager.QuotaPenaltiesOnGordion.Value))
+            if (dead == 0 || !PenaltyHelpers.QuotaPenaltiesApply(atCompany))
                 return (0f, 0);
 
             float pct = PenaltyHelpers.ComputePenaltyPercent(
