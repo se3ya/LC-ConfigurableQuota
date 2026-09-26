@@ -25,9 +25,10 @@ namespace ConfigurableQuota
         public static ConfigEntry<float> RolloverAmount = null!;
         public static ConfigEntry<bool> OvertimeExcludesRollover = null!;
         public static ConfigEntry<float> RolloverWipePenalty = null!;
+        public static ConfigEntry<bool> RolloverAlertEnabled = null!;
 
         public static ConfigEntry<bool> CreditPenaltiesEnabled = null!;
-        public static ConfigEntry<bool> CreditPenaltiesOnGordion = null!;
+        public static ConfigEntry<bool> CreditPenaltiesOnCompanyMoons = null!;
         public static ConfigEntry<float> CreditPenaltyPercentPerPlayer = null!;
         public static ConfigEntry<bool> CreditPenaltiesDynamic = null!;
         public static ConfigEntry<float> CreditPenaltyPercentCap = null!;
@@ -35,7 +36,7 @@ namespace ConfigurableQuota
         public static ConfigEntry<float> CreditPenaltyRecoveryBonus = null!;
 
         public static ConfigEntry<bool> QuotaPenaltiesEnabled = null!;
-        public static ConfigEntry<bool> QuotaPenaltiesOnGordion = null!;
+        public static ConfigEntry<bool> QuotaPenaltiesOnCompanyMoons = null!;
         public static ConfigEntry<float> QuotaPenaltyPercentPerPlayer = null!;
         public static ConfigEntry<bool> QuotaPenaltiesDynamic = null!;
         public static ConfigEntry<float> QuotaPenaltyPercentCap = null!;
@@ -62,6 +63,12 @@ namespace ConfigurableQuota
         public static ConfigEntry<bool> EnableGrowthDampening = null!;
         public static ConfigEntry<int> DampeningStartAt = null!;
         public static ConfigEntry<float> DampeningSharpness = null!;
+
+        public static ConfigEntry<string> ForcedCompanyMoons = null!;
+        public static ConfigEntry<string> ExcludedCompanyMoons = null!;
+        public static ConfigEntry<bool> ApplyLossesOnCompanyMoons = null!;
+
+        public static ConfigEntry<bool> OnlyLoseCurrentRoundLoot = null!;
 
         public static ConfigEntry<bool> EquipmentLossEnabled = null!;
         public static ConfigEntry<float> LoseEachEquipmentChance = null!;
@@ -115,6 +122,18 @@ namespace ConfigurableQuota
         public static ConfigEntry<int> DynamicEnemyPowerPlayerThreshold = null!;
         public static ConfigEntry<float> DynamicEnemyPowerMultPerPlayer = null!;
         public static ConfigEntry<float> DynamicEnemyPowerMaxFactor = null!;
+
+        private static void MigrateBool(ConfigFile config, string section, string oldKey, ConfigEntry<bool> target)
+        {
+            var legacy = config.Bind(section, oldKey, false, "Replaced by OnCompanyMoons.");
+            bool value = legacy.Value;
+            config.Remove(legacy.Definition);
+
+            if (!value) return;
+
+            target.Value = true;
+            Plugin.Log.LogInfo($"Carried '{section}/{oldKey}' over to OnCompanyMoons.");
+        }
 
         internal static void Initialize(ConfigFile config)
         {
@@ -191,7 +210,10 @@ namespace ConfigurableQuota
                 "0. Basic",
                 "BaseIncrease",
                 100,
-                "Base amount the quota increase per each quota. Combined with CurveSharpness as: increase ≈ BaseIncrease * (1 + quota² / Sharpness). With defaults (100, 16) at quota 3, that's 100 * (1 + 9/16) ≈ 156."
+                new ConfigDescription(
+                    "Base amount the quota increase per each quota. Combined with CurveSharpness as: increase ≈ BaseIncrease * (1 + quota² / Sharpness). With defaults (100, 16) at quota 3, that's 100 * (1 + 9/16) ≈ 156.",
+                    new AcceptableValueRange<int>(0, 1000000)
+                )
             );
             CurveSharpness = config.Bind(
                 "0. Basic",
@@ -203,7 +225,10 @@ namespace ConfigurableQuota
                 "0. Basic",
                 "RandomizerMultiplier",
                 1f,
-                "Random variance on each quota increase. Multiplies by a factor in [1 - 0.5*M, 1 + 0.5*M]. 0 = no randomness, 1 = ±50% (vanilla), 2 = ±100%."
+                new ConfigDescription(
+                    "Random variance on each quota increase. Multiplies by a factor in [1 - 0.5*M, 1 + 0.5*M]. 0 = no randomness, 1 = ±50% (vanilla), 2 = ±100%. Above 2 the quota could shrink, so 2 is the limit.",
+                    new AcceptableValueRange<float>(0f, 2f)
+                )
             );
 
             FinalLevel = config.Bind(
@@ -216,7 +241,7 @@ namespace ConfigurableQuota
                 "1. Leveling",
                 "FinalIncrease",
                 200,
-                "Fixed increase amount used after reaching Final Level value."
+                "Fixed increase used once the quota reaches Final Level. Replaces the curve, so CurveSharpness stops mattering."
             );
             QuotaCap = config.Bind(
                 "1. Leveling",
@@ -294,9 +319,15 @@ namespace ConfigurableQuota
                 "RolloverWipePenalty",
                 0.0f,
                 new ConfigDescription(
-                    "Percentage of banked rollover that is lost when the entire crew dies. 0.5 = lose 50%. Requires RolloverAmount > 0 to have any effect.",
+                    "Percentage of rollover that is lost when the entire crew dies. 0.5 = lose 50%. Requires RolloverAmount > 0 to have any effect.",
                     new AcceptableValueRange<float>(0f, 1f)
                 )
+            );
+            RolloverAlertEnabled = config.Bind(
+                "3. Optional",
+                "RolloverAlertEnabled",
+                true,
+                "Show red alert once rollover stops covering next quota, after the new quota screen ends. Local to this client. Requires RolloverAmount > 0 to have any effect."
             );
 
             CreditPenaltiesEnabled = config.Bind(
@@ -305,12 +336,13 @@ namespace ConfigurableQuota
                 false,
                 "Reduce credits when crew members die."
             );
-            CreditPenaltiesOnGordion = config.Bind(
+            CreditPenaltiesOnCompanyMoons = config.Bind(
                 "4. Penalties.Credits",
-                "OnGordion",
+                "OnCompanyMoons",
                 false,
-                "Apply credit penalties even when visiting The Company."
+                "Apply credit penalties even when visiting company moon."
             );
+            MigrateBool(config, "4. Penalties.Credits", "OnGordion", CreditPenaltiesOnCompanyMoons);
             CreditPenaltyPercentPerPlayer = config.Bind(
                 "4. Penalties.Credits",
                 "PercentPerPlayer",
@@ -348,12 +380,13 @@ namespace ConfigurableQuota
                 false,
                 "Increase the current quota when crew members die."
             );
-            QuotaPenaltiesOnGordion = config.Bind(
+            QuotaPenaltiesOnCompanyMoons = config.Bind(
                 "5. Penalties.Quota",
-                "OnGordion",
+                "OnCompanyMoons",
                 false,
-                "Apply quota penalties even when visiting The Company."
+                "Apply quota penalties even when visiting a company moon."
             );
+            MigrateBool(config, "5. Penalties.Quota", "OnGordion", QuotaPenaltiesOnCompanyMoons);
             QuotaPenaltyPercentPerPlayer = config.Bind(
                 "5. Penalties.Quota",
                 "PercentPerPlayer",
@@ -389,7 +422,13 @@ namespace ConfigurableQuota
                 "6. Loss.Scrap",
                 "Enabled",
                 false,
-                "Randomly lose collected scrap when all crew dies."
+                "Randomly lose collected scrap when all crew dies. Odds come from ItemsSafeChance and LoseEachScrapChance."
+            );
+            OnlyLoseCurrentRoundLoot = config.Bind(
+                "6. Loss.Scrap",
+                "OnlyLoseCurrentRoundLoot",
+                false,
+                "Only scrap collected on day of wipe can be lost, anything gathered on earlier days is safe. Applies to Loss Scrap and Loss Value."
             );
             ItemsSafeChance = config.Bind(
                 "6. Loss.Scrap",
@@ -413,7 +452,7 @@ namespace ConfigurableQuota
                 "6. Loss.Scrap",
                 "MaxLostScrapItems",
                 2,
-                "Maximum scrap that can be lost per round."
+                "Maximum scrap that can be lost per round. 0 = no limit."
             );
 
             ValueLossEnabled = config.Bind(
@@ -451,7 +490,26 @@ namespace ConfigurableQuota
                 "8. Loss.Equipment",
                 "MaxLostEquipmentItems",
                 1,
-                "Maximum equipment items that can be lost per round. 1 = at most one item is lost."
+                "Maximum equipment items that can be lost per round. 1 = at most one item is lost. 0 = no limit."
+            );
+
+            ForcedCompanyMoons = config.Bind(
+                "E. Company.Moons",
+                "ForcedCompanyMoons",
+                "",
+                "Comma separated moon names always treated as a company moon even when not detected as one. Company moon also skips Dynamic sections."
+            );
+            ExcludedCompanyMoons = config.Bind(
+                "E. Company.Moons",
+                "ExcludedCompanyMoons",
+                "",
+                "Comma separated moon names never treated as a company moon even when detected as one. Wins over Forced Company Moons when a name is in both."
+            );
+            ApplyLossesOnCompanyMoons = config.Bind(
+                "E. Company.Moons",
+                "ApplyLossesOnCompanyMoons",
+                false,
+                "Apply Loss Scrap, Loss Value and Loss Equipment on a full crew wipe at a company moon too."
             );
 
             QuotaAnimationSpeed = config.Bind(
@@ -553,7 +611,7 @@ namespace ConfigurableQuota
                 "JackpotMinRate",
                 1.5f,
                 new ConfigDescription(
-                    "Minimum jackpot rate. 1.5 = 150%.",
+                    "Minimum jackpot rate. 1.5 = 150%. REQUIRES 'JackpotEnabled' SET TO TRUE.",
                     new AcceptableValueRange<float>(0f, 10f)
                 )
             );
@@ -562,7 +620,7 @@ namespace ConfigurableQuota
                 "JackpotMaxRate",
                 3.0f,
                 new ConfigDescription(
-                    "Maximum jackpot rate. 3.0 = 300%.",
+                    "Maximum jackpot rate. 3.0 = 300%. REQUIRES 'JackpotEnabled' SET TO TRUE.",
                     new AcceptableValueRange<float>(0f, 10f)
                 )
             );
@@ -599,7 +657,7 @@ namespace ConfigurableQuota
                 "BaseSize",
                 1.0f,
                 new ConfigDescription(
-                    "factorySizeMultiplier at the PlayerThreshold. 1.0 = vanilla size.",
+                    "factorySizeMultiplier at the PlayerThreshold. 1.0 = vanilla size and it scales up from there per extra player.",
                     new AcceptableValueRange<float>(0f, 10f)
                 )
             );
@@ -748,19 +806,19 @@ namespace ConfigurableQuota
                 "D. Dynamic.Enemy.Power",
                 "ScaleInside",
                 true,
-                "Apply scaling to maxEnemyPowerCount (inside enemies)."
+                "Apply scaling to maxEnemyPowerCount (inside enemies). REQUIRES 'Enabled' SET TO TRUE."
             );
             DynamicEnemyPowerScaleOutside = config.Bind(
                 "D. Dynamic.Enemy.Power",
                 "ScaleOutside",
                 true,
-                "Apply scaling to maxOutsideEnemyPowerCount (night time outside enemies)."
+                "Apply scaling to maxOutsideEnemyPowerCount (night time outside enemies). REQUIRES 'Enabled' SET TO TRUE."
             );
             DynamicEnemyPowerScaleDaytime = config.Bind(
                 "D. Dynamic.Enemy.Power",
                 "ScaleDaytime",
                 false,
-                "Apply scaling to maxDaytimeEnemyPowerCount (daytime outside enemies)."
+                "Apply scaling to maxDaytimeEnemyPowerCount (daytime outside enemies). REQUIRES 'Enabled' SET TO TRUE."
             );
             DynamicEnemyPowerPlayerThreshold = config.Bind(
                 "D. Dynamic.Enemy.Power",
@@ -789,6 +847,8 @@ namespace ConfigurableQuota
                     new AcceptableValueRange<float>(1f, 20f)
                 )
             );
+
+            config.Save();
         }
     }
 }
