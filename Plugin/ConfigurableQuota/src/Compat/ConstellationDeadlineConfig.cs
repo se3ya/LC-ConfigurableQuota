@@ -141,6 +141,19 @@ namespace ConfigurableQuota.Compat
 
         private static bool EnsureConstellationEntry(string constellationName)
         {
+            try
+            {
+                return AddConstellationEntry(constellationName);
+            }
+            catch (Exception e)
+            {
+                Plugin.Log.LogWarning($"Could not add deadline settings for constellation '{constellationName}': {e.Message}. It will use the global deadline.");
+                return false;
+            }
+        }
+
+        private static bool AddConstellationEntry(string constellationName)
+        {
             if (_constellationConfig == null)
                 return false;
 
