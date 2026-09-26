@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using LethalNetworkAPI;
 using UnityEngine;
 
@@ -11,6 +12,7 @@ namespace ConfigurableQuota.Patches
         private static LNetworkMessage<SyncValueLossData>? _syncValueLossMessage;
         private static LNetworkMessage<int>? _syncDeadlineMessage;
         private static LNetworkMessage<int>? _syncRolloverMessage;
+        private static LNetworkMessage<RolloverStatusData>? _rolloverStatusMessage;
         private static LNetworkMessage<SyncScrapLossSummary>? _syncScrapLossSummaryMessage;
         private static LNetworkMessage<SyncBuyingRateData>? _syncBuyingRateMessage;
 
@@ -41,6 +43,11 @@ namespace ConfigurableQuota.Patches
                 _syncRolloverMessage = LNetworkMessage<int>.Connect(
                     "ConfigurableQuota_SyncRollover",
                     onClientReceived: OnRolloverReceived
+                );
+
+                _rolloverStatusMessage = LNetworkMessage<RolloverStatusData>.Connect(
+                    "ConfigurableQuota_RolloverStatus",
+                    onClientReceived: OnRolloverStatusReceived
                 );
 
                 _syncScrapLossSummaryMessage = LNetworkMessage<SyncScrapLossSummary>.Connect(
@@ -366,6 +373,77 @@ namespace ConfigurableQuota.Patches
             }
         }
 
+        public static void ReportRolloverStatus(int bank, int quota, int deadline)
+        {
+            ShowRolloverStatus(bank, quota, deadline);
+
+            try
+            {
+                if (_rolloverStatusMessage == null)
+                {
+                    Plugin.Log.LogWarning("Rollover status message not initialized");
+                    return;
+                }
+
+                _rolloverStatusMessage.SendClients(new RolloverStatusData(bank, quota, deadline));
+            }
+            catch (Exception ex)
+            {
+                Plugin.Log.LogError($"Could not send the rollover status: {ex.Message}");
+            }
+        }
+
+        private static void OnRolloverStatusReceived(RolloverStatusData data)
+        {
+            if (Unity.Netcode.NetworkManager.Singleton != null && Unity.Netcode.NetworkManager.Singleton.IsServer)
+                return;
+
+            ShowRolloverStatus(data.Bank, data.Quota, data.Deadline);
+        }
+
+        private static void ShowRolloverStatus(int bank, int quota, int deadline)
+        {
+            try
+            {
+                if (!ConfigManager.RolloverAlertEnabled.Value) return;
+
+                var hud = HUDManager.Instance;
+                if (hud == null) return;
+
+                hud.StartCoroutine(RolloverStatusRoutine(hud, bank, quota, deadline));
+            }
+            catch (Exception ex)
+            {
+                Plugin.Log.LogError($"Could not show the rollover status: {ex.Message}");
+            }
+        }
+
+        private static IEnumerator RolloverStatusRoutine(HUDManager hud, int bank, int quota, int deadline)
+        {
+            yield return new WaitForSecondsRealtime(1f);
+
+            float waited = 0f;
+            while (hud != null && hud.displayingNewQuota && waited < 60f)
+            {
+                waited += Time.unscaledDeltaTime;
+                yield return null;
+            }
+
+            yield return new WaitForSecondsRealtime(1.5f);
+
+            if (hud == null) yield break;
+
+            string days = deadline == 1 ? "1 day" : $"{deadline} days";
+
+            hud.DisplayTip(
+                "<color=#ffc526>ROLLOVER SPENT</color>",
+                $"<color=#fcbf17>\n* Rollover only covers ${bank} of ${quota}, sell ${quota - bank} within {days}</color>",
+                true,
+                false,
+                "LC_RolloverTip"
+            );
+        }
+
         #endregion
 
         #region Buying Rate Sync
@@ -408,6 +486,9 @@ namespace ConfigurableQuota.Patches
 
         private static void OnBuyingRateReceived(SyncBuyingRateData data)
         {
+            if (Unity.Netcode.NetworkManager.Singleton != null && Unity.Netcode.NetworkManager.Singleton.IsServer)
+                return;
+
             try
             {
                 BuyingRatePatch.ApplyReceivedBuyingRate(data.Rate, data.IsJackpot, data.Silent);
@@ -431,6 +512,21 @@ namespace ConfigurableQuota.Patches
         {
             Quota = quota;
             PenaltyDelta = penaltyDelta;
+        }
+    }
+
+    [Serializable]
+    public struct RolloverStatusData
+    {
+        public int Bank;
+        public int Quota;
+        public int Deadline;
+
+        public RolloverStatusData(int bank, int quota, int deadline)
+        {
+            Bank = bank;
+            Quota = quota;
+            Deadline = deadline;
         }
     }
 
