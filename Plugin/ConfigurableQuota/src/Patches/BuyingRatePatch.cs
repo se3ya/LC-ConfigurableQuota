@@ -23,7 +23,7 @@ namespace ConfigurableQuota.Patches
                 var sor = StartOfRound.Instance;
                 if (sor == null) return;
 
-                float vanillaRate = sor.companyBuyingRate;
+                float vanillaRate = Mathf.Max(0.3f, sor.companyBuyingRate);
                 int daysUntilDeadline = __instance.daysUntilDeadline;
 
                 (float rate, bool isJackpot, string source) = ResolveRate(vanillaRate, daysUntilDeadline);
