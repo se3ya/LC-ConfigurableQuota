@@ -12,6 +12,11 @@ namespace ConfigurableQuota.Patches
     {
         public static bool IsServerSafe => NetworkManager.Singleton != null && NetworkManager.Singleton.IsServer;
 
+        public static int GetPlayerCount()
+        {
+            return Mathf.Max(1, (StartOfRound.Instance?.connectedPlayersAmount ?? 0) + 1);
+        }
+
         public static (int dead, int total, int recovered) CountDeathsAndRecovered()
         {
             var sor = StartOfRound.Instance;
@@ -238,6 +243,8 @@ namespace ConfigurableQuota.Patches
                 HasAllDeadSnapshot = false;
                 CachedQuotaPenaltyDelta = 0;
                 ClearScrapLossSummary();
+                SelfSortingStorageCompat.Processed = false;
+                HQoLCompat.Processed = false;
 
                 bool atCompany = PenaltyHelpers.IsAtCompany();
                 var (dead, total, recovered) = PenaltyHelpers.CountDeathsAndRecovered();
@@ -248,6 +255,7 @@ namespace ConfigurableQuota.Patches
                 {
                     wipeHandled = true;
                     _appliedThisRound = true;
+                    _lossesAppliedThisRound = true;
 
                     CollectVehicleItems();
                     MarkBeltBagContentsAsShipItems();
@@ -256,7 +264,6 @@ namespace ConfigurableQuota.Patches
 
                     ApplyLossesWhenAllDead();
                     MarkSurvivingItemsAsPersisted();
-                    _lossesAppliedThisRound = true;
                     HasAllDeadSnapshot = true;
 
                     CachePenaltyCounts(dead, total, recovered);
@@ -583,9 +590,9 @@ namespace ConfigurableQuota.Patches
             try
             {
                 var allGrab = UnityEngine.Object.FindObjectsOfType<GrabbableObject>();
-                if (allGrab == null || allGrab.Length == 0) return;
 
                 var storageSlots = SelfSortingStorageCompat.GetSlots();
+                var hqolItems = HQoLCompat.GetItems();
                 var storedLive = new HashSet<GrabbableObject>(storageSlots.Select(s => s.Live));
 
                 var shipItems = allGrab.Where(g => IsShipItem(g) && !storedLive.Contains(g)).ToArray();
@@ -593,54 +600,74 @@ namespace ConfigurableQuota.Patches
                 var shipEquip = shipItems.Where(g => !g.itemProperties.isScrap && !IsBodyOrBlacklisted(g)).ToArray();
 
                 var storedScrap = storageSlots.Where(s => s.IsScrap).ToList();
-                var storedEquip = storageSlots.Where(s => !s.IsScrap && !IsBodyOrBlacklisted(s.Live)).ToList();
+                var storedEquip = storageSlots
+                    .Where(s => s.Consistent && !s.IsScrap && !IsBodyOrBlacklisted(s.Live))
+                    .Select(s => (Slot: s, Indices: GetLosableIndices(s, false)))
+                    .ToList();
 
-                int shipScrapBeforeLoss = SumScrapValue(shipScrap) + SumStoredValues(storedScrap);
+                int shipScrapBeforeLoss = SumScrapValue(shipScrap) + SumStoredValues(storedScrap) + hqolItems.Sum(i => Mathf.Max(0, i.Value));
 
                 bool scrapInsured = ScrapInsuranceCompat.IsScrapInsured();
                 if (scrapInsured)
                     Plugin.Log.LogInfo("Scrap Insurance is active, collected scrap is protected from this crew wipe.");
 
-                bool onlyCurrentRound = ConfigManager.OnlyLoseCurrentRoundLoot.Value;
+                bool dayProtection = ConfigManager.OnlyLoseCurrentDayLoot.Value;
+                int players = PenaltyHelpers.GetPlayerCount();
+                int maxPlayers = ConfigManager.OnlyCurrentDayMaxPlayers.Value;
+                bool onlyCurrentDay = dayProtection && (maxPlayers <= 0 || players <= maxPlayers);
 
-                var losableScrap = onlyCurrentRound
+                bool scrapCanBeLost = (ConfigManager.ScrapLossEnabled.Value || ConfigManager.ValueLossEnabled.Value) && !scrapInsured;
+
+                if (scrapCanBeLost && dayProtection && !onlyCurrentDay)
+                    Plugin.Log.LogInfo($"Lobby of {players} is over the limit of {maxPlayers}, older loot can be lost this wipe.");
+
+                var losableScrap = onlyCurrentDay
                     ? shipScrap.Where(g => g != null && !g.scrapPersistedThroughRounds).ToArray()
                     : shipScrap;
-                var losableStoredScrap = onlyCurrentRound
-                    ? storedScrap.Where(s => s?.Live != null && !s.Live.scrapPersistedThroughRounds).ToList()
-                    : storedScrap;
+                var losableStored = storedScrap
+                    .Where(s => s.Consistent)
+                    .Select(s => (Slot: s, Indices: GetLosableIndices(s, onlyCurrentDay)))
+                    .Where(p => p.Indices.Count > 0)
+                    .ToList();
+                var losableHQoL = onlyCurrentDay ? new List<HQoLItem>() : hqolItems;
 
-                if (onlyCurrentRound)
-                    Plugin.Log.LogInfo($"Only this rounds loot can be lost, {losableScrap.Length} of {shipScrap.Length} loose scrap and {losableStoredScrap.Count} of {storedScrap.Count} stored stacks are eligible.");
+                if (scrapCanBeLost && onlyCurrentDay)
+                {
+                    int storedTotal = storedScrap.Sum(s => s.Count) + hqolItems.Count;
+                    int storedAtRisk = losableStored.Sum(p => p.Indices.Count);
+                    Plugin.Log.LogInfo($"Only today's loot can be lost, {losableScrap.Length} of {shipScrap.Length} loose scrap and {storedAtRisk} of {storedTotal} stored items are at risk.");
+                }
 
                 if (ConfigManager.ValueLossEnabled.Value && !scrapInsured)
                 {
-                    var valueTargets = losableScrap.Concat(losableStoredScrap.Select(s => s.Live)).ToArray();
+                    float keptFraction = 1f - Mathf.Clamp01(ConfigManager.ValueLossPercent.Value);
+
+                    var valueTargets = losableScrap
+                        .Concat(losableStored.Where(p => p.Indices.Contains(0)).Select(p => p.Slot.Live))
+                        .ToArray();
                     if (valueTargets.Length > 0)
-                    {
                         ApplyValueLoss(valueTargets);
 
-                        float keptFraction = 1f - Mathf.Clamp01(ConfigManager.ValueLossPercent.Value);
-                        foreach (var slot in losableStoredScrap)
-                            SelfSortingStorageCompat.ScaleValues(slot, keptFraction);
-                    }
+                    foreach (var (slot, indices) in losableStored)
+                        SelfSortingStorageCompat.ScaleValues(slot, keptFraction, indices);
+
+                    HQoLCompat.ScaleValues(losableHQoL, keptFraction);
                 }
 
                 if (ConfigManager.ScrapLossEnabled.Value && !scrapInsured)
                 {
-                    int budget = ResolveLossBudget(ConfigManager.MaxLostScrapItems.Value);
+                    float safeChance = Mathf.Clamp01(ConfigManager.ItemsSafeChance.Value);
+                    float loseChance = Mathf.Clamp01(ConfigManager.LoseEachScrapChance.Value);
+
+                    int budget = GetLossBudget(ConfigManager.MaxLostScrapItems.Value);
                     budget = SelectAndRemoveScrap(losableScrap, budget);
-                    SelectAndRemoveStoredItems(
-                        losableStoredScrap,
-                        budget,
-                        Mathf.Clamp01(ConfigManager.ItemsSafeChance.Value),
-                        Mathf.Clamp01(ConfigManager.LoseEachScrapChance.Value),
-                        "scrap");
+                    budget = SelectAndRemoveStoredItems(losableStored, budget, safeChance, loseChance, "scrap");
+                    SelectAndRemoveHQoLItems(losableHQoL, budget, safeChance, loseChance);
                 }
 
                 if (ConfigManager.EquipmentLossEnabled.Value)
                 {
-                    int budget = ResolveLossBudget(ConfigManager.MaxLostEquipmentItems.Value);
+                    int budget = GetLossBudget(ConfigManager.MaxLostEquipmentItems.Value);
                     budget = SelectAndRemoveEquipment(shipEquip, budget);
                     SelectAndRemoveStoredItems(
                         storedEquip,
@@ -650,7 +677,7 @@ namespace ConfigurableQuota.Patches
                         "equipment");
                 }
 
-                int shipScrapAfterLoss = SumCurrentShipScrapValue(shipScrap) + SumStoredValues(storedScrap);
+                int shipScrapAfterLoss = SumCurrentShipScrapValue(shipScrap) + SumStoredValues(storedScrap) + (HQoLCompat.Processed ? HQoLCompat.SumValues() : 0);
                 CacheScrapLossSummary(shipScrapBeforeLoss, shipScrapAfterLoss);
                 NetworkSync.SyncScrapLossSummaryToClients(shipScrapBeforeLoss, shipScrapAfterLoss);
 
@@ -735,10 +762,23 @@ namespace ConfigurableQuota.Patches
             catch { return false; }
         }
 
-        private static int ResolveLossBudget(int configured)
+        private static int GetLossBudget(int configured)
         {
             int value = Mathf.Max(0, configured);
             return value == 0 ? int.MaxValue : value;
+        }
+
+        private static List<int> GetLosableIndices(StorageSlot slot, bool onlyCurrentDay)
+        {
+            var indices = new List<int>();
+
+            for (int i = 0; i < slot.Count; i++)
+            {
+                if (!onlyCurrentDay || SelfSortingStorageCompat.IsNew(slot, i))
+                    indices.Add(i);
+            }
+
+            return indices;
         }
 
         private static int SumStoredValues(IEnumerable<StorageSlot> slots)
@@ -752,51 +792,51 @@ namespace ConfigurableQuota.Patches
         }
 
         private static int SelectAndRemoveStoredItems(
-            List<StorageSlot> slots,
+            List<(StorageSlot Slot, List<int> Indices)> entries,
             int budget,
             float safeChance,
             float loseChance,
             string label)
         {
-            if (slots.Count == 0) return budget;
+            if (entries.Count == 0) return budget;
 
             int eligible = 0;
             int removedCount = 0;
             List<string> removedNames = new();
 
-            foreach (var slot in slots)
+            foreach (var (slot, indices) in entries)
             {
                 try
                 {
-                    if (slot?.Live == null || slot.Count == 0) continue;
+                    if (slot?.Live == null || indices.Count == 0) continue;
 
-                    int lostFromSlot = 0;
+                    var chosen = new List<int>();
 
-                    for (int i = 0; i < slot.Count; i++)
+                    foreach (int index in indices)
                     {
                         eligible++;
 
-                        if (removedCount + lostFromSlot >= budget) continue;
+                        if (removedCount + chosen.Count >= budget) continue;
 
                         if (safeChance > 0f && UnityEngine.Random.value < safeChance) continue;
 
                         if (UnityEngine.Random.value < loseChance)
-                            lostFromSlot++;
+                            chosen.Add(index);
                     }
 
-                    if (lostFromSlot == 0) continue;
+                    if (chosen.Count == 0) continue;
 
                     string itemName = slot.Live.itemProperties != null
                         ? slot.Live.itemProperties.itemName
                         : slot.Live.name;
 
-                    bool emptied = SelfSortingStorageCompat.RemoveItems(slot, lostFromSlot);
+                    int removed = SelfSortingStorageCompat.RemoveItems(slot, chosen);
 
-                    removedCount += lostFromSlot;
-                    for (int i = 0; i < lostFromSlot; i++)
+                    removedCount += removed;
+                    for (int i = 0; i < removed; i++)
                         removedNames.Add(itemName);
 
-                    if (emptied)
+                    if (removed > 0 && slot.Count == 0)
                         DespawnObject(slot.Live);
                 }
                 catch (Exception ex)
@@ -809,6 +849,27 @@ namespace ConfigurableQuota.Patches
                 Plugin.Log.LogInfo($"Stored {label} removed: {removedCount}/{eligible} [{string.Join(", ", removedNames)}].");
 
             return Mathf.Max(0, budget - removedCount);
+        }
+
+        private static void SelectAndRemoveHQoLItems(List<HQoLItem> items, int budget, float safeChance, float loseChance)
+        {
+            if (items.Count == 0) return;
+
+            var chosen = new List<HQoLItem>();
+
+            foreach (var item in items)
+            {
+                if (chosen.Count >= budget) break;
+
+                if (safeChance > 0f && UnityEngine.Random.value < safeChance) continue;
+
+                if (UnityEngine.Random.value < loseChance)
+                    chosen.Add(item);
+            }
+
+            int removed = HQoLCompat.RemoveItems(chosen);
+            string names = string.Join(", ", chosen.OrderByDescending(i => i.Index).Take(removed).Select(i => i.Name));
+            Plugin.Log.LogInfo($"Stored HQoL scrap removed: {removed}/{items.Count} [{names}].");
         }
 
         private static int SelectAndRemoveScrap(GrabbableObject[] scrapItems, int budget)
@@ -852,7 +913,8 @@ namespace ConfigurableQuota.Patches
                 }
             }
 
-            Plugin.Log.LogInfo($"Scrap items removed: {removedCount}/{eligible} [{string.Join(", ", removedNames)}].");
+            if (eligible > 0)
+                Plugin.Log.LogInfo($"Scrap items removed: {removedCount}/{eligible} [{string.Join(", ", removedNames)}].");
 
             if (keptByUpgrade > 0)
                 Plugin.Log.LogInfo($"Scrap Keeper saved {keptByUpgrade} scrap from this crew wipe.");
@@ -891,7 +953,8 @@ namespace ConfigurableQuota.Patches
                 }
             }
 
-            Plugin.Log.LogInfo($"Equipment items removed: {removedCount}/{eligible} [{string.Join(", ", removedNames)}].");
+            if (eligible > 0)
+                Plugin.Log.LogInfo($"Equipment items removed: {removedCount}/{eligible} [{string.Join(", ", removedNames)}].");
             return Mathf.Max(0, budget - removedCount);
         }
 
@@ -982,6 +1045,8 @@ namespace ConfigurableQuota.Patches
             PenaltiesOnLandingPatch.HasAllDeadSnapshot = false;
             PenaltiesOnLandingPatch.CachedQuotaPenaltyDelta = 0;
             PenaltiesOnLandingPatch.ClearScrapLossSummary();
+            SelfSortingStorageCompat.Processed = false;
+            HQoLCompat.Processed = false;
         }
     }
 }
