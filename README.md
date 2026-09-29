@@ -207,8 +207,9 @@ pct = 30% * (1 - 0.5 * 2/4) = 30% * 0.75 = 22.5%
 - **Enabled** - Randomly lose collected scrap items when the entire crew is wiped
 - **Items Safe Chance** - Chance for each item to be protected from loss
 - **Lose Each Scrap Chance** - Chance to lose an unprotected item
-- **Max Lost Scrap Items** - Maximum scrap items that can be lost per round
-- **Only Lose Current Round Loot** - Wipe only takes scrap collected that day. Affects _7. Loss.Value_ too
+- **Max Lost Scrap Items** - Maximum scrap items that can be lost per wipe. Loose scrap is rolled first, then stored items
+- **Only Lose Current Day Loot** - Wipe only takes scrap collected that day. Affects _7. Loss.Value_ too
+- **Only Current Day Max Players** - Older scrap is only safe up to this lobby size. 1 = solo only, 0 = no limit. REQUIRES `OnlyLoseCurrentDayLoot`
 
 **Per-item loss chance**:
 
@@ -239,7 +240,7 @@ remaining = (1 - 0.25)³ = 0.75³ ≈ 0.42
 
 - **Enabled** - Randomly lose purchased equipment when the entire crew is wiped
 - **Lose Each Equipment Chance** - Chance for each equipment item to be lost
-- **Max Lost Equipment Items** - Maximum equipment items lost per round
+- **Max Lost Equipment Items** - Maximum equipment items lost per wipe
 
 **Example**: 6 equipment items on the ship, `LoseEachEquipmentChance=0.05`, `MaxLostEquipmentItems=1`:
 
@@ -421,7 +422,20 @@ Native port of *BuyRateSettings* features. All entries default OFF, so the Compa
 | Last day, no jackpot   | `1.2` (120%) from last-day override         |
 | Last day, jackpot hits | Random pick in `[1.5, 3.0]` + red alert     |
 
-### **Compatibility - LethalConstellations**
+---
+
+## Compatibility
+
+- [LethalConstellations](https://thunderstore.io/c/lethal-company/p/darmuh/LethalConstellations/)
+- [LethalMoonUnlocks](https://thunderstore.io/c/lethal-company/p/explodingMods/LethalMoonUnlocks/)
+- [Self Sorting Storage](https://thunderstore.io/c/lethal-company/p/Zigzag/SelfSortingStorage/)
+- [HQoL](https://thunderstore.io/c/lethal-company/p/HQHQTeam/HQoL/)
+- [Lategame Upgrades](https://thunderstore.io/c/lethal-company/p/malco/Lategame_Upgrades/)
+- [Scrap Insurance](https://thunderstore.io/c/lethal-company/p/WhiteSpike/Scrap_Insurance/)
+- [GeneralImprovements](https://thunderstore.io/c/lethal-company/p/ShaosilGaming/GeneralImprovements/)
+- [Advanced Features](https://thunderstore.io/c/lethal-company/p/lethal_coder/Advance_Features/)
+
+### **LethalConstellations**
 
 A separate `com.seeya.configurablequota_constellations.cfg` is auto-generated only when LethalConstellations is detected. Each constellation gets its own block:
 
