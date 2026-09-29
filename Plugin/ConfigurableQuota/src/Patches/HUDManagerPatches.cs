@@ -42,6 +42,14 @@ namespace ConfigurableQuota.Patches
         }
 
         [HarmonyPatch("FillEndGameStats")]
+        [HarmonyPrefix]
+        private static void FillEndGameStats_Prefix()
+        {
+            PenaltiesOnLandingPatch.HasAllDeadSnapshot = false;
+            PenaltiesOnLandingPatch.ClearScrapLossSummary();
+        }
+
+        [HarmonyPatch("FillEndGameStats")]
         [HarmonyPostfix]
         [HarmonyAfter(new[] { "com.example.Advancedfeatures" })]
         private static void FillEndGameStats_Postfix()
@@ -51,7 +59,6 @@ namespace ConfigurableQuota.Patches
 
         internal static void TryApplyAdvancedFeaturesEndscreen()
         {
-            if (!ConfigManager.ScrapLossEnabled.Value) return;
             if (!Chainloader.PluginInfos.ContainsKey("com.example.Advancedfeatures")) return;
             if (!PenaltiesOnLandingPatch.HasAllDeadSnapshot) return;
 
@@ -94,7 +101,7 @@ namespace ConfigurableQuota.Patches
             {
                 int lostValue = Mathf.Max(0, beforeValue - afterValue);
                 int percentRounded = Mathf.RoundToInt(Mathf.Clamp01(lostPercent) * 100f);
-                string displayText = $"Lost {percentRounded}% scrap (${lostValue}/{beforeValue})";
+                string displayText = $"Lost {percentRounded}% scrap (${lostValue}/${beforeValue})";
 
                 var collectedText = collectedTextField?.GetValue(null) as Component;
                 var totalText = totalTextField?.GetValue(null) as Component;
@@ -111,7 +118,7 @@ namespace ConfigurableQuota.Patches
 
                 textProperty?.SetValue(scrapLostText, displayText);
 
-                Plugin.Log.LogInfo($"Updated Advanced Features scrap-loss text: {percentRounded}% (${lostValue}/{beforeValue}).");
+                Plugin.Log.LogInfo($"Updated Advanced Features scrap-loss text: {percentRounded}% (${lostValue}/${beforeValue}).");
             }
             else
             {
