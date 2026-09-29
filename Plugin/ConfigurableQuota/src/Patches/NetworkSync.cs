@@ -125,6 +125,9 @@ namespace ConfigurableQuota.Patches
 
         private static void OnScrapLossSummaryReceived(SyncScrapLossSummary data)
         {
+            if (Unity.Netcode.NetworkManager.Singleton != null && Unity.Netcode.NetworkManager.Singleton.IsServer)
+                return;
+
             try
             {
                 if (data.BeforeValue > 0)
@@ -135,6 +138,9 @@ namespace ConfigurableQuota.Patches
                 {
                     PenaltiesOnLandingPatch.ClearScrapLossSummary();
                 }
+
+                PenaltiesOnLandingPatch.HasAllDeadSnapshot = true;
+                HudQuotaAnimationPatch.TryApplyAdvancedFeaturesEndscreen();
             }
             catch (Exception ex)
             {
