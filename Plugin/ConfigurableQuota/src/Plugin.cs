@@ -38,8 +38,6 @@ namespace ConfigurableQuota
 
       _harmony.PatchAll();
 
-      SelfSortingStorageWipePatch.TryPatch(_harmony);
-
       OpenLibEventBridge.TrySubscribe();
 
       Log.LogInfo($"{MyPluginInfo.PLUGIN_NAME} is loaded!");
