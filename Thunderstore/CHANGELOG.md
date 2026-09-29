@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.0] - 2026-09-29
+
+### Added
+
+- HQoL compatibility, stored scrap follows the loss settings on crew wipe
+- HQoL terminal sales count as sold scrap, same as selling at the counter. Overtime Excludes Rollover now sees them
+- OnlyCurrentDayMaxPlayers, older loot is only safe up to this lobby size
+
+### Fixed
+
+- SSS 1.5.3 compatibility
+- Advanced Features crew wipe screen only showing the real scrap loss for the host and only with Loss Scrap on
+- Advanced Features crew wipe screen missing $ on the scrap total
+
 ## [1.7.0] - 2026-08-22
 
 ### Added
