@@ -14,6 +14,32 @@ namespace ConfigurableQuota.Patches
 
         private static int _firedResetGeneration;
 
+        [HarmonyPatch("Start")]
+        [HarmonyPostfix]
+        [HarmonyPriority(Priority.First)]
+        private static void Start_Postfix()
+        {
+            var harmony = new Harmony(MyPluginInfo.PLUGIN_GUID);
+
+            try
+            {
+                SelfSortingStorageCompat.Init(harmony);
+            }
+            catch (Exception e)
+            {
+                Plugin.Log.LogWarning($"Could not set up SSS compatibility: {e.Message}");
+            }
+
+            try
+            {
+                HQoLCompat.Init(harmony);
+            }
+            catch (Exception e)
+            {
+                Plugin.Log.LogWarning($"Could not set up HQoL compatibility: {e.Message}");
+            }
+        }
+
         [HarmonyPatch(nameof(GameNetworkManager.ResetSavedGameValues))]
         [HarmonyPostfix]
         [HarmonyAfter(new[] { ModGUIDs.LETHAL_MOON_UNLOCKS_GUID })]
