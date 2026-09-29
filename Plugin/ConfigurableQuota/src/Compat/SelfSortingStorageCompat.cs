@@ -16,6 +16,9 @@ namespace ConfigurableQuota.Compat
         internal int Key;
         internal GrabbableObject Live = null!;
         internal IList Values = null!;
+        internal IList? Saves;
+        internal IList? States;
+        internal bool Consistent;
 
         internal int Count => Values.Count;
         internal bool IsScrap => Live != null && Live.itemProperties != null && Live.itemProperties.isScrap;
@@ -26,8 +29,9 @@ namespace ConfigurableQuota.Compat
         private const string AssemblyName = "SelfSortingStorage";
         private const string SmartCupboardTypeName = "SelfSortingStorage.Cupboard.SmartCupboard";
         private const string SmartMemoryTypeName = "SelfSortingStorage.Cupboard.SmartMemory";
-        private const string ResetOnAllDeadMethodName = "ResetSmartCupboardIfAllDeads";
         private const string InvalidId = "INVALID";
+
+        internal static bool Processed;
 
         private static Type? _smartCupboardType;
         private static FieldInfo? _placedItemsField;
@@ -36,19 +40,48 @@ namespace ConfigurableQuota.Compat
         private static FieldInfo? _memorySizeField;
         private static FieldInfo? _dataIdField;
         private static FieldInfo? _dataValuesField;
+        private static FieldInfo? _dataSavesField;
+        private static FieldInfo? _dataStatesField;
+        private static FieldInfo? _dataQuantityField;
         private static MethodInfo? _retrieveDataMethod;
         private static MethodInfo? _updateDisplayedQuantityRpc;
         private static MethodInfo? _setSizeRpc;
-        private static bool _reflectionReady;
-        private static bool _reflectionAttempted;
+        private static bool _ready;
+        private static bool _initDone;
 
-        internal static bool IsInstalled => Chainloader.PluginInfos.ContainsKey(ModGUIDs.SELF_SORTING_STORAGE_GUID);
+        private static bool IsInstalled => Chainloader.PluginInfos.ContainsKey(ModGUIDs.SELF_SORTING_STORAGE_GUID);
+
+        internal static void Init(Harmony harmony)
+        {
+            if (_initDone) return;
+            _initDone = true;
+
+            if (!IsInstalled) return;
+
+            if (!LoadMembers())
+            {
+                Plugin.Log.LogWarning("Could not read SSS storage, it will be cleared on a crew wipe as usual.");
+                return;
+            }
+
+            _ready = true;
+
+            var handlers = StorageWipePatch.FindHandlers(m => m.DeclaringType?.Assembly.GetName().Name == AssemblyName);
+            if (handlers.Count == 0)
+            {
+                Plugin.Log.LogWarning("Could not find the SSS crew wipe handler, stored items will be cleared on a crew wipe.");
+                return;
+            }
+
+            if (handlers.Count(h => StorageWipePatch.PatchSelfSorting(harmony, h)) > 0)
+                Plugin.Log.LogInfo("SSS stored items now follow crew wipe loss settings.");
+        }
 
         internal static List<StorageSlot> GetSlots()
         {
             var slots = new List<StorageSlot>();
 
-            if (!IsInstalled || !EnsureReflectionReady())
+            if (!_ready)
                 return slots;
 
             try
@@ -75,69 +108,108 @@ namespace ConfigurableQuota.Compat
                             && live != null
                             && _dataValuesField!.GetValue(data) is IList values)
                         {
-                            slots.Add(new StorageSlot
+                            var slot = new StorageSlot
                             {
                                 Key = flatIndex,
                                 Live = live,
-                                Values = values
-                            });
+                                Values = values,
+                                Saves = _dataSavesField!.GetValue(data) as IList,
+                                States = _dataStatesField?.GetValue(data) as IList
+                            };
+                            slot.Consistent = IsConsistent(slot, data);
+
+                            if (!slot.Consistent)
+                                Plugin.Log.LogDebug($"SSS stack {flatIndex} is left alone, its stored lists do not line up.");
+
+                            slots.Add(slot);
                         }
 
                         flatIndex++;
                     }
                 }
+
+                Processed = true;
             }
             catch (Exception e)
             {
-                Plugin.Log.LogDebug($"Could not read SSS slots: {e.Message}");
+                Plugin.Log.LogWarning($"Could not read SSS storage: {e.Message}");
+                slots.Clear();
             }
 
             return slots;
         }
 
-        internal static bool RemoveItems(StorageSlot slot, int count)
+        internal static bool IsNew(StorageSlot slot, int index)
         {
-            if (!EnsureReflectionReady() || slot == null || count <= 0)
-                return false;
+            if (slot.States != null && index < slot.States.Count && slot.States[index] is bool persisted)
+                return !persisted;
+
+            return slot.Live != null && !slot.Live.scrapPersistedThroughRounds;
+        }
+
+        internal static int RemoveItems(StorageSlot slot, IEnumerable<int> indices)
+        {
+            if (!_ready || slot == null || !slot.Consistent)
+                return 0;
+
+            object? memory = _memoryInstanceField!.GetValue(null);
+            if (memory == null) return 0;
+
+            int startCount = slot.Values.Count;
+            int removed = 0;
 
             try
             {
-                object? memory = _memoryInstanceField!.GetValue(null);
-                if (memory == null) return false;
+                foreach (int index in indices.Where(i => i >= 0 && i < startCount).Distinct().OrderByDescending(i => i))
+                {
+                    MoveToFront(slot.Values, index);
+                    MoveToFront(slot.Saves!, index);
+                    if (slot.States != null)
+                        MoveToFront(slot.States, index);
 
-                int startCount = slot.Values.Count;
-                int toRemove = Math.Min(count, startCount);
-                if (toRemove <= 0) return false;
+                    if (_retrieveDataMethod!.Invoke(memory, new object[] { slot.Key, true }) == null)
+                        break;
 
-                for (int i = 0; i < toRemove; i++)
-                    _retrieveDataMethod!.Invoke(memory, new object[] { slot.Key, true });
+                    removed++;
+                }
+            }
+            catch (Exception e)
+            {
+                Plugin.Log.LogWarning($"Could not remove SSS entries: {e.Message}");
+            }
 
-                bool emptied = toRemove >= startCount;
+            if (removed == 0) return 0;
+
+            try
+            {
+                bool emptied = removed >= startCount;
 
                 if (emptied && TryGetPlacedItems(out IDictionary? placedItems))
                     placedItems!.Remove(slot.Key);
                 else if (!emptied)
                     RealignLiveValue(slot);
 
-                SyncCupboardState(memory, slot.Key, emptied ? 0 : startCount - toRemove);
-                return emptied;
+                SyncCupboardState(memory, slot.Key, emptied ? 0 : startCount - removed);
             }
             catch (Exception e)
             {
-                Plugin.Log.LogWarning($"Could not remove SSS entries: {e.Message}");
-                return false;
+                Plugin.Log.LogWarning($"Could not update SSS stack after removal: {e.Message}");
             }
+
+            return removed;
         }
 
-        internal static void ScaleValues(StorageSlot slot, float multiplier)
+        internal static void ScaleValues(StorageSlot slot, float multiplier, IEnumerable<int> indices)
         {
-            if (!EnsureReflectionReady() || slot == null)
+            if (!_ready || slot == null)
                 return;
 
             try
             {
-                for (int i = 0; i < slot.Values.Count; i++)
+                foreach (int i in indices)
                 {
+                    if (i < 0 || i >= slot.Values.Count) continue;
+
                     int value = slot.Values[i] is int stored ? stored : 0;
                     slot.Values[i] = Mathf.Max(0, Mathf.RoundToInt(value * multiplier));
                 }
@@ -148,6 +220,15 @@ namespace ConfigurableQuota.Compat
             }
         }
 
+        private static void MoveToFront(IList list, int index)
+        {
+            if (index == 0) return;
+
+            object? item = list[index];
+            list.RemoveAt(index);
+            list.Insert(0, item);
+        }
+
         private static void RealignLiveValue(StorageSlot slot)
         {
             try
@@ -155,6 +236,7 @@ namespace ConfigurableQuota.Compat
                 if (slot.Live == null || slot.Values.Count == 0) return;
                 if (slot.Live.itemProperties == null || !slot.Live.itemProperties.isScrap) return;
                 if (slot.Values[0] is not int value) return;
+                if (slot.Live.scrapValue == value) return;
 
                 slot.Live.scrapValue = value;
                 slot.Live.SetScrapValue(value);
@@ -183,29 +265,14 @@ namespace ConfigurableQuota.Compat
             return total;
         }
 
-        internal static MethodInfo? FindResetOnAllDeadMethod()
+        private static bool IsConsistent(StorageSlot slot, object data)
         {
-            try
-            {
-                Assembly? assembly = AppDomain.CurrentDomain.GetAssemblies()
-                    .FirstOrDefault(a => a.GetName().Name == AssemblyName);
-                if (assembly == null) return null;
+            if (slot.Saves == null || _dataQuantityField!.GetValue(data) is not int quantity || quantity <= 0)
+                return false;
 
-                foreach (Type type in assembly.GetTypes())
-                {
-                    MethodInfo? method = type.GetMethod(
-                        ResetOnAllDeadMethodName,
-                        BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
-
-                    if (method != null) return method;
-                }
-            }
-            catch (Exception e)
-            {
-                Plugin.Log.LogWarning($"Could not locate SSS crew wipe handler: {e.Message}");
-            }
-
-            return null;
+            return slot.Values.Count == quantity
+                && slot.Saves.Count == quantity
+                && (slot.States == null || slot.States.Count == quantity);
         }
 
         private static bool TryGetPlacedItems(out IDictionary? placedItems)
@@ -242,46 +309,37 @@ namespace ConfigurableQuota.Compat
             }
         }
 
-        private static bool EnsureReflectionReady()
+        private static bool LoadMembers()
         {
-            if (_reflectionAttempted)
-                return _reflectionReady;
+            _smartCupboardType = AccessTools.TypeByName(SmartCupboardTypeName);
+            _placedItemsField = AccessTools.Field(_smartCupboardType, "placedItems");
 
-            _reflectionAttempted = true;
+            Type? memoryType = AccessTools.TypeByName(SmartMemoryTypeName);
+            _memoryInstanceField = AccessTools.Field(memoryType, "Instance");
+            _memoryItemListField = AccessTools.Field(memoryType, "ItemList");
+            _memorySizeField = AccessTools.Field(memoryType, "Size");
 
-            try
-            {
-                _smartCupboardType = AccessTools.TypeByName(SmartCupboardTypeName);
-                _placedItemsField = AccessTools.Field(_smartCupboardType, "placedItems");
+            Type? dataType = AccessTools.Inner(memoryType, "Data");
+            _dataIdField = AccessTools.Field(dataType, "Id");
+            _dataValuesField = AccessTools.Field(dataType, "Values");
+            _dataSavesField = AccessTools.Field(dataType, "Saves");
+            _dataStatesField = dataType?.GetField("States");
+            _dataQuantityField = AccessTools.Field(dataType, "Quantity");
 
-                Type? memoryType = AccessTools.TypeByName(SmartMemoryTypeName);
-                _memoryInstanceField = AccessTools.Field(memoryType, "Instance");
-                _memoryItemListField = AccessTools.Field(memoryType, "ItemList");
-                _memorySizeField = AccessTools.Field(memoryType, "Size");
+            _retrieveDataMethod = AccessTools.Method(memoryType, "RetrieveData", new[] { typeof(int), typeof(bool) });
+            _updateDisplayedQuantityRpc = AccessTools.Method(_smartCupboardType, "UpdateDisplayedQuantityClientRpc", new[] { typeof(int), typeof(int) });
+            _setSizeRpc = AccessTools.Method(_smartCupboardType, "SetSizeClientRpc", new[] { typeof(int) });
 
-                Type? dataType = AccessTools.Inner(memoryType, "Data");
-                _dataIdField = AccessTools.Field(dataType, "Id");
-                _dataValuesField = AccessTools.Field(dataType, "Values");
-
-                _retrieveDataMethod = AccessTools.Method(memoryType, "RetrieveData", new[] { typeof(int), typeof(bool) });
-                _updateDisplayedQuantityRpc = AccessTools.Method(_smartCupboardType, "UpdateDisplayedQuantityClientRpc", new[] { typeof(int), typeof(int) });
-                _setSizeRpc = AccessTools.Method(_smartCupboardType, "SetSizeClientRpc", new[] { typeof(int) });
-
-                _reflectionReady = _smartCupboardType != null
-                    && _placedItemsField != null
-                    && _memoryInstanceField != null
-                    && _memoryItemListField != null
-                    && _memorySizeField != null
-                    && _dataIdField != null
-                    && _dataValuesField != null
-                    && _retrieveDataMethod != null;
-            }
-            catch (Exception e)
-            {
-                Plugin.Log.LogWarning($"Failed to initialize SSS reflection: {e.Message}");
-            }
-
-            return _reflectionReady;
+            return _smartCupboardType != null
+                && _placedItemsField != null
+                && _memoryInstanceField != null
+                && _memoryItemListField != null
+                && _memorySizeField != null
+                && _dataIdField != null
+                && _dataValuesField != null
+                && _dataSavesField != null
+                && _dataQuantityField != null
+                && _retrieveDataMethod != null;
         }
     }
 }
