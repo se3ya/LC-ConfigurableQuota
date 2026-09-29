@@ -36,7 +36,7 @@ namespace ConfigurableQuota.Patches
                 ConfigManager.DynamicInteriorSizeDirection.Value);
             float size = ConfigManager.DynamicInteriorSizeBase.Value * factor;
             level.factorySizeMultiplier = size;
-            Plugin.Log.LogInfo($"Dynamic interior size - factorySizeMultiplier = {size:F2} (players={GetPlayerCount()}, factor={factor:F2}).");
+            Plugin.Log.LogInfo($"Dynamic interior size - factorySizeMultiplier = {size:F2} (players={PenaltyHelpers.GetPlayerCount()}, factor={factor:F2}).");
         }
 
         [HarmonyPatch("SpawnScrapInLevel")]
@@ -91,7 +91,7 @@ namespace ConfigurableQuota.Patches
                 level.maxDaytimeEnemyPowerCount = Mathf.RoundToInt(_savedMaxDaytimePower * factor);
 
             Plugin.Log.LogInfo(
-                $"Dynamic enemy power - factor={factor:F2} (players={GetPlayerCount()}), " +
+                $"Dynamic enemy power - factor={factor:F2} (players={PenaltyHelpers.GetPlayerCount()}), " +
                 $"inside={level.maxEnemyPowerCount}, outside={level.maxOutsideEnemyPowerCount}, daytime={level.maxDaytimeEnemyPowerCount}.");
         }
 
@@ -125,16 +125,11 @@ namespace ConfigurableQuota.Patches
             return ShouldRun(rm, out level);
         }
 
-        private static int GetPlayerCount()
-        {
-            return Mathf.Max(1, (StartOfRound.Instance?.connectedPlayersAmount ?? 0) + 1);
-        }
-
         private static float ComputePlayerFactor(int threshold, float mult, PlayerScalingDirection direction)
         {
             int count = direction == PlayerScalingDirection.PerMissingPlayer
-                ? Mathf.Max(0, threshold - GetPlayerCount())
-                : Mathf.Max(0, GetPlayerCount() - threshold);
+                ? Mathf.Max(0, threshold - PenaltyHelpers.GetPlayerCount())
+                : Mathf.Max(0, PenaltyHelpers.GetPlayerCount() - threshold);
             return 1f + (count * Mathf.Max(0f, mult));
         }
 
