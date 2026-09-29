@@ -68,7 +68,8 @@ namespace ConfigurableQuota
         public static ConfigEntry<string> ExcludedCompanyMoons = null!;
         public static ConfigEntry<bool> ApplyLossesOnCompanyMoons = null!;
 
-        public static ConfigEntry<bool> OnlyLoseCurrentRoundLoot = null!;
+        public static ConfigEntry<bool> OnlyLoseCurrentDayLoot = null!;
+        public static ConfigEntry<int> OnlyCurrentDayMaxPlayers = null!;
 
         public static ConfigEntry<bool> EquipmentLossEnabled = null!;
         public static ConfigEntry<float> LoseEachEquipmentChance = null!;
@@ -125,14 +126,15 @@ namespace ConfigurableQuota
 
         private static void MigrateBool(ConfigFile config, string section, string oldKey, ConfigEntry<bool> target)
         {
-            var legacy = config.Bind(section, oldKey, false, "Replaced by OnCompanyMoons.");
+            string newKey = target.Definition.Key;
+            var legacy = config.Bind(section, oldKey, false, $"Replaced by {newKey}.");
             bool value = legacy.Value;
             config.Remove(legacy.Definition);
 
             if (!value) return;
 
             target.Value = true;
-            Plugin.Log.LogInfo($"Carried '{section}/{oldKey}' over to OnCompanyMoons.");
+            Plugin.Log.LogInfo($"Carried '{section}/{oldKey}' over to {newKey}.");
         }
 
         internal static void Initialize(ConfigFile config)
@@ -424,11 +426,21 @@ namespace ConfigurableQuota
                 false,
                 "Randomly lose collected scrap when all crew dies. Odds come from ItemsSafeChance and LoseEachScrapChance."
             );
-            OnlyLoseCurrentRoundLoot = config.Bind(
+            OnlyLoseCurrentDayLoot = config.Bind(
                 "6. Loss.Scrap",
-                "OnlyLoseCurrentRoundLoot",
+                "OnlyLoseCurrentDayLoot",
                 false,
                 "Only scrap collected on day of wipe can be lost, anything gathered on earlier days is safe. Applies to Loss Scrap and Loss Value."
+            );
+            MigrateBool(config, "6. Loss.Scrap", "OnlyLoseCurrentRoundLoot", OnlyLoseCurrentDayLoot);
+            OnlyCurrentDayMaxPlayers = config.Bind(
+                "6. Loss.Scrap",
+                "OnlyCurrentDayMaxPlayers",
+                0,
+                new ConfigDescription(
+                    "Older scrap is only safe while the lobby has this many players or fewer at the wipe. 1 = solo only, 0 = no limit. REQUIRES 'OnlyLoseCurrentDayLoot' SET TO TRUE.",
+                    new AcceptableValueRange<int>(0, 50)
+                )
             );
             ItemsSafeChance = config.Bind(
                 "6. Loss.Scrap",
@@ -452,7 +464,7 @@ namespace ConfigurableQuota
                 "6. Loss.Scrap",
                 "MaxLostScrapItems",
                 2,
-                "Maximum scrap that can be lost per round. 0 = no limit."
+                "Maximum scrap that can be lost per wipe. 0 = no limit. Loose scrap is rolled first."
             );
 
             ValueLossEnabled = config.Bind(
@@ -490,7 +502,7 @@ namespace ConfigurableQuota
                 "8. Loss.Equipment",
                 "MaxLostEquipmentItems",
                 1,
-                "Maximum equipment items that can be lost per round. 1 = at most one item is lost. 0 = no limit."
+                "Maximum equipment items that can be lost per wipe. 1 = at most one item is lost. 0 = no limit."
             );
 
             ForcedCompanyMoons = config.Bind(
