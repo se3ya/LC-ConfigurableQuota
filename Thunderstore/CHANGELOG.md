@@ -5,6 +5,45 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0] - 2026-10-17
+
+### Added
+
+- Bee Hive values, was supposed to be in other my mod but meh
+
+### Changed
+
+- Dynamic Interior Size `BaseSize` now multiplies moons own size
+- Dynamic Scrap Value now multiplies each scrap value, before it did nothing
+- Dynamic Scrap Amount now scales the moons own scrap count
+- Late join sync waits for player to load
+- Code cleanup
+
+### Removed
+
+- `ScrapValueOffset` option
+- `ValuePerScrapItem` option
+- `MinScrapFraction` option
+
+### Fixed
+
+- Dynamic Interior Size desyncing clients
+- Buy rate staying at 100% on first day of new quota
+- Buy rate settings and alert ignored on first day of new quota
+- Clients sometimes showing vanilla buy rate instead of hosts
+- Late joiners getting wrong deadline
+- Clients with their own credit penalty settings getting different fine than host
+- Dynamic Enemy Power stacking after host left mid round
+- Dynamic Scrap Amount staying changed if scrap spawning failed
+- Crew wipe deleting scrap that rolled into ship
+- `ForcedCompanyMoons` and `ExcludedCompanyMoons` changes not applying until another moon
+- Recovery Bonus counting 0 bodies with Mirage
+- Fines screen DUE showing less than credits actually taken
+- Clients seeing different death, body and penalty numbers on the fines screen than host
+- Fines screen percent ignoring LGU Life Insurance discount
+- ButteryFixes replacing fines screen text depending on load order
+- Fines screen hiding vanillas credit fine at company moons with On Company Moons false
+
 ## [1.8.0] - 2026-09-29
 
 ### Added
