@@ -1,173 +1,158 @@
 using System;
 using System.Collections;
-using HarmonyLib;
-using Unity.Netcode;
-using UnityEngine;
 using ConfigurableQuota.Compat;
+using HarmonyLib;
+using UnityEngine;
 
-namespace ConfigurableQuota.Patches
+namespace ConfigurableQuota.Patches;
+
+[HarmonyPatch(typeof(GameNetworkManager))]
+internal static class GameNetworkManagerPatches
 {
-    [HarmonyPatch(typeof(GameNetworkManager))]
-    internal static class GameNetworkManagerPatches
+    private const float SettleTimeoutSeconds = 12f;
+
+    private static int _firedResetGeneration;
+
+    [HarmonyPatch("Start")]
+    [HarmonyPostfix]
+    [HarmonyPriority(Priority.First)]
+    private static void Start_Postfix()
     {
-        private const float SettleTimeoutSeconds = 12f;
+        var harmony = new Harmony(MyPluginInfo.PLUGIN_GUID);
 
-        private static int _firedResetGeneration;
-
-        [HarmonyPatch("Start")]
-        [HarmonyPostfix]
-        [HarmonyPriority(Priority.First)]
-        private static void Start_Postfix()
+        try
         {
-            var harmony = new Harmony(MyPluginInfo.PLUGIN_GUID);
-
-            try
-            {
-                SelfSortingStorageCompat.Init(harmony);
-            }
-            catch (Exception e)
-            {
-                Plugin.Log.LogWarning($"Could not set up SSS compatibility: {e.Message}");
-            }
-
-            try
-            {
-                HQoLCompat.Init(harmony);
-            }
-            catch (Exception e)
-            {
-                Plugin.Log.LogWarning($"Could not set up HQoL compatibility: {e.Message}");
-            }
+            SelfSortingStorageCompat.Init(harmony);
+        }
+        catch (Exception e)
+        {
+            Plugin.Log.LogWarning($"Could not set up SSS compatibility: {e.Message}");
         }
 
-        [HarmonyPatch(nameof(GameNetworkManager.ResetSavedGameValues))]
-        [HarmonyPostfix]
-        [HarmonyAfter(new[] { ModGUIDs.LETHAL_MOON_UNLOCKS_GUID })]
-        private static void ResetSavedGameValues_Postfix(GameNetworkManager __instance)
+        try
         {
-            try
-            {
-                QuotaSaveData.Clear();
-
-                var tod = TimeOfDay.Instance;
-                if (tod == null)
-                    return;
-
-                if (!((NetworkBehaviour)tod).IsServer)
-                    return;
-
-                TimeOfDayQuotaPatch.ResetInitialDeadlineTracking();
-
-                int generation = ++_firedResetGeneration;
-                MonoBehaviour host = __instance != null ? __instance : (MonoBehaviour)tod;
-
-                if (!LethalConstellationsCompat.IsInstalled)
-                {
-                    host.StartCoroutine(ReapplyDeadlineAfterShipReset(generation));
-                    return;
-                }
-
-                LethalConstellationsCompat.TryGetCurrentConstellationName(out string staleConstellation);
-                host.StartCoroutine(ReapplyDeadlineWhenConstellationSettles(generation, staleConstellation));
-            }
-            catch (Exception e)
-            {
-                Plugin.Log.LogWarning($"Could not schedule deadline reapply after firing: {e.Message}");
-            }
+            HQoLCompat.Init(harmony);
         }
-
-        private static IEnumerator ReapplyDeadlineAfterShipReset(int generation)
+        catch (Exception e)
         {
-            float elapsed = 0f;
-
-            while (elapsed < SettleTimeoutSeconds)
-            {
-                if (generation != _firedResetGeneration)
-                    yield break;
-
-                var tod = TimeOfDay.Instance;
-                if (tod == null)
-                    yield break;
-
-                if (tod.timesFulfilledQuota == 0)
-                {
-                    ApplySettledDeadline(tod);
-                    yield break;
-                }
-
-                elapsed += Time.deltaTime;
-                yield return null;
-            }
+            Plugin.Log.LogWarning($"Could not set up HQoL compatibility: {e.Message}");
         }
+    }
 
-        private static IEnumerator ReapplyDeadlineWhenConstellationSettles(int generation, string staleConstellation)
+    [HarmonyPatch(nameof(GameNetworkManager.ResetSavedGameValues))]
+    [HarmonyPostfix]
+    [HarmonyAfter(new[] { ModGUIDs.LethalMoonUnlocks })]
+    private static void ResetSavedGameValues_Postfix()
+    {
+        try
         {
-            bool hadStale = !string.IsNullOrEmpty(staleConstellation);
-            float elapsed = 0f;
+            QuotaSaveData.Clear();
 
-            while (true)
+            var tod = TimeOfDay.Instance;
+            if (tod == null || !tod.IsServer)
+                return;
+
+            TimeOfDayQuotaPatch.ResetInitialDeadlineTracking();
+
+            int generation = ++_firedResetGeneration;
+
+            if (!LethalConstellationsCompat.IsInstalled)
             {
-                if (generation != _firedResetGeneration)
-                    yield break;
-
-                var tod = TimeOfDay.Instance;
-                if (tod == null)
-                    yield break;
-
-                bool settled = false;
-
-                if (tod.timesFulfilledQuota == 0)
-                {
-                    bool haveName = LethalConstellationsCompat.TryGetCurrentConstellationName(out string current);
-
-                    if (hadStale)
-                    {
-                        settled = haveName
-                            && !string.Equals(current, staleConstellation, StringComparison.OrdinalIgnoreCase);
-                    }
-                }
-
-                if (settled || elapsed >= SettleTimeoutSeconds)
-                {
-                    ApplySettledDeadline(tod);
-                    yield break;
-                }
-
-                elapsed += Time.deltaTime;
-                yield return null;
+                tod.StartCoroutine(ReapplyDeadlineAfterShipReset(generation));
+                return;
             }
+
+            LethalConstellationsCompat.TryGetCurrentConstellationName(out string staleConstellation);
+            tod.StartCoroutine(ReapplyDeadlineWhenConstellationSettles(generation, staleConstellation));
         }
-
-        private static void ApplySettledDeadline(TimeOfDay tod)
+        catch (Exception e)
         {
-            try
+            Plugin.Log.LogWarning($"Could not schedule deadline reapply after firing: {e.Message}");
+        }
+    }
+
+    private static IEnumerator ReapplyDeadlineAfterShipReset(int generation)
+    {
+        float elapsed = 0f;
+
+        while (elapsed < SettleTimeoutSeconds)
+        {
+            if (generation != _firedResetGeneration)
+                yield break;
+
+            var tod = TimeOfDay.Instance;
+            if (tod.timesFulfilledQuota == 0)
             {
-                if (tod == null || tod.timesFulfilledQuota != 0)
-                    return;
-
-                if (!((NetworkBehaviour)tod).IsServer)
-                    return;
-
-                ConstellationDeadlineConfig.RefreshSections();
-                TimeOfDayQuotaPatch.ResetInitialDeadlineTracking();
-
-                bool applied = TimeOfDayQuotaPatch.TryApplyInitialDeadlineFromCurrentMode(
-                    tod,
-                    allowConstellationOverride: true,
-                    logSelection: true);
-
-                if (!applied)
-                    return;
-
-                NetworkSync.SyncDeadlineToClients(tod.daysUntilDeadline);
-                TimeOfDayQuotaPatch.RefreshExternalMonitors();
-
-                Plugin.Log.LogInfo($"Deadline reapplied after firing: {tod.daysUntilDeadline} days.");
+                ApplySettledDeadline(tod);
+                yield break;
             }
-            catch (Exception e)
+
+            elapsed += Time.deltaTime;
+            yield return null;
+        }
+    }
+
+    private static IEnumerator ReapplyDeadlineWhenConstellationSettles(int generation, string staleConstellation)
+    {
+        bool hadStale = !string.IsNullOrEmpty(staleConstellation);
+        float elapsed = 0f;
+
+        while (true)
+        {
+            if (generation != _firedResetGeneration)
+                yield break;
+
+            var tod = TimeOfDay.Instance;
+            bool settled = false;
+
+            if (tod.timesFulfilledQuota == 0)
             {
-                Plugin.Log.LogWarning($"Could not reapply deadline after firing: {e.Message}");
+                bool haveName = LethalConstellationsCompat.TryGetCurrentConstellationName(out string current);
+
+                if (hadStale)
+                {
+                    settled = haveName
+                        && !string.Equals(current, staleConstellation, StringComparison.OrdinalIgnoreCase);
+                }
             }
+
+            if (settled || elapsed >= SettleTimeoutSeconds)
+            {
+                ApplySettledDeadline(tod);
+                yield break;
+            }
+
+            elapsed += Time.deltaTime;
+            yield return null;
+        }
+    }
+
+    private static void ApplySettledDeadline(TimeOfDay tod)
+    {
+        try
+        {
+            if (tod.timesFulfilledQuota != 0 || !tod.IsServer)
+                return;
+
+            ConstellationDeadlineConfig.RefreshSections();
+            TimeOfDayQuotaPatch.ResetInitialDeadlineTracking();
+
+            bool applied = TimeOfDayQuotaPatch.TryApplyInitialDeadlineFromCurrentMode(
+                tod,
+                allowConstellationOverride: true,
+                logSelection: true);
+
+            if (!applied)
+                return;
+
+            NetworkSync.SyncDeadlineToClients(tod.daysUntilDeadline);
+            TimeOfDayQuotaPatch.RefreshExternalMonitors();
+
+            Plugin.Log.LogInfo($"Deadline reapplied after firing: {tod.daysUntilDeadline} days.");
+        }
+        catch (Exception e)
+        {
+            Plugin.Log.LogWarning($"Could not reapply deadline after firing: {e.Message}");
         }
     }
 }

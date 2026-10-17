@@ -1,866 +1,897 @@
 using BepInEx.Configuration;
 using ConfigurableQuota.Patches;
 
-namespace ConfigurableQuota
+namespace ConfigurableQuota;
+
+public static class ConfigManager
 {
-    public static class ConfigManager
+    public static ConfigEntry<int> StartingCredits = null!;
+    public static ConfigEntry<int> StartingQuota = null!;
+    public static ConfigEntry<int> DaysToDeadline = null!;
+    public static ConfigEntry<int> BaseIncrease = null!;
+    public static ConfigEntry<float> CurveSharpness = null!;
+    public static ConfigEntry<float> RandomizerMultiplier = null!;
+
+    public static ConfigEntry<int> FinalLevel = null!;
+    public static ConfigEntry<int> FinalIncrease = null!;
+    public static ConfigEntry<int> QuotaCap = null!;
+
+    public static ConfigEntry<bool> EnablePlayerMultiplier = null!;
+    public static ConfigEntry<int> PlayerThreshold = null!;
+    public static ConfigEntry<int> PlayerCap = null!;
+    public static ConfigEntry<float> MultPerPlayer = null!;
+
+    public static ConfigEntry<bool> DisableQuota = null!;
+    public static ConfigEntry<float> RolloverAmount = null!;
+    public static ConfigEntry<bool> OvertimeExcludesRollover = null!;
+    public static ConfigEntry<float> RolloverWipePenalty = null!;
+    public static ConfigEntry<bool> RolloverAlertEnabled = null!;
+
+    public static ConfigEntry<bool> CreditPenaltiesEnabled = null!;
+    public static ConfigEntry<bool> CreditPenaltiesOnCompanyMoons = null!;
+    public static ConfigEntry<float> CreditPenaltyPercentPerPlayer = null!;
+    public static ConfigEntry<bool> CreditPenaltiesDynamic = null!;
+    public static ConfigEntry<float> CreditPenaltyPercentCap = null!;
+    public static ConfigEntry<float> CreditPenaltyPercentThreshold = null!;
+    public static ConfigEntry<float> CreditPenaltyRecoveryBonus = null!;
+
+    public static ConfigEntry<bool> QuotaPenaltiesEnabled = null!;
+    public static ConfigEntry<bool> QuotaPenaltiesOnCompanyMoons = null!;
+    public static ConfigEntry<float> QuotaPenaltyPercentPerPlayer = null!;
+    public static ConfigEntry<bool> QuotaPenaltiesDynamic = null!;
+    public static ConfigEntry<float> QuotaPenaltyPercentCap = null!;
+    public static ConfigEntry<float> QuotaPenaltyPercentThreshold = null!;
+    public static ConfigEntry<float> QuotaPenaltyRecoveryBonus = null!;
+
+    public static ConfigEntry<bool> ScrapLossEnabled = null!;
+    public static ConfigEntry<float> ItemsSafeChance = null!;
+    public static ConfigEntry<float> LoseEachScrapChance = null!;
+    public static ConfigEntry<int> MaxLostScrapItems = null!;
+
+    public static ConfigEntry<bool> ValueLossEnabled = null!;
+    public static ConfigEntry<float> ValueLossPercent = null!;
+
+    public static ConfigEntry<bool> RandomizeDeadline = null!;
+    public static ConfigEntry<int> DeadlineMin = null!;
+    public static ConfigEntry<int> DeadlineMax = null!;
+    public static ConfigEntry<bool> DeadlineMustChange = null!;
+    public static ConfigEntry<bool> EnableDeadlineBonus = null!;
+    public static ConfigEntry<int> DeadlineBonusPerQuota = null!;
+    public static ConfigEntry<int> DeadlineBonusMax = null!;
+    public static ConfigEntry<string> DeadlineBonusThresholds = null!;
+
+    public static ConfigEntry<bool> EnableGrowthDampening = null!;
+    public static ConfigEntry<int> DampeningStartAt = null!;
+    public static ConfigEntry<float> DampeningSharpness = null!;
+
+    public static ConfigEntry<string> ForcedCompanyMoons = null!;
+    public static ConfigEntry<string> ExcludedCompanyMoons = null!;
+    public static ConfigEntry<bool> ApplyLossesOnCompanyMoons = null!;
+
+    public static ConfigEntry<bool> OnlyLoseCurrentDayLoot = null!;
+    public static ConfigEntry<int> OnlyCurrentDayMaxPlayers = null!;
+
+    public static ConfigEntry<bool> EquipmentLossEnabled = null!;
+    public static ConfigEntry<float> LoseEachEquipmentChance = null!;
+    public static ConfigEntry<int> MaxLostEquipmentItems = null!;
+
+    public static ConfigEntry<float> QuotaAnimationSpeed = null!;
+
+    public static ConfigEntry<bool> MinMaxRateEnabled = null!;
+    public static ConfigEntry<float> MinRate = null!;
+    public static ConfigEntry<float> MaxRate = null!;
+    public static ConfigEntry<bool> RandomRateEnabled = null!;
+    public static ConfigEntry<bool> LastDayRateEnabled = null!;
+    public static ConfigEntry<float> LastDayRangeChance = null!;
+    public static ConfigEntry<float> LastDayMinRate = null!;
+    public static ConfigEntry<float> LastDayMaxRate = null!;
+    public static ConfigEntry<bool> JackpotEnabled = null!;
+    public static ConfigEntry<bool> JackpotLastDayOnly = null!;
+    public static ConfigEntry<float> JackpotChance = null!;
+    public static ConfigEntry<float> JackpotMinRate = null!;
+    public static ConfigEntry<float> JackpotMaxRate = null!;
+    public static ConfigEntry<bool> BuyRateAlertEnabled = null!;
+    public static ConfigEntry<bool> JackpotAlertEnabled = null!;
+    public static ConfigEntry<float> AlertDelaySeconds = null!;
+
+    public static ConfigEntry<bool> DynamicInteriorSizeEnabled = null!;
+    public static ConfigEntry<float> DynamicInteriorSizeBase = null!;
+    public static ConfigEntry<int> DynamicInteriorSizePlayerThreshold = null!;
+    public static ConfigEntry<PlayerScalingDirection> DynamicInteriorSizeDirection = null!;
+    public static ConfigEntry<float> DynamicInteriorSizeMultPerPlayer = null!;
+
+    public static ConfigEntry<bool> DynamicScrapValueEnabled = null!;
+    public static ConfigEntry<float> DynamicScrapValueMinMult = null!;
+    public static ConfigEntry<float> DynamicScrapValueMaxMult = null!;
+    public static ConfigEntry<int> DynamicScrapValuePlayerThreshold = null!;
+    public static ConfigEntry<PlayerScalingDirection> DynamicScrapValueDirection = null!;
+    public static ConfigEntry<float> DynamicScrapValueMultPerPlayer = null!;
+
+    public static ConfigEntry<bool> DynamicScrapAmountEnabled = null!;
+    public static ConfigEntry<int> DynamicScrapAmountCap = null!;
+    public static ConfigEntry<int> DynamicScrapAmountPlayerThreshold = null!;
+    public static ConfigEntry<PlayerScalingDirection> DynamicScrapAmountDirection = null!;
+    public static ConfigEntry<float> DynamicScrapAmountMultPerPlayer = null!;
+
+    public static ConfigEntry<bool> DynamicEnemyPowerEnabled = null!;
+    public static ConfigEntry<bool> DynamicEnemyPowerScaleInside = null!;
+    public static ConfigEntry<bool> DynamicEnemyPowerScaleOutside = null!;
+    public static ConfigEntry<bool> DynamicEnemyPowerScaleDaytime = null!;
+    public static ConfigEntry<int> DynamicEnemyPowerPlayerThreshold = null!;
+    public static ConfigEntry<float> DynamicEnemyPowerMultPerPlayer = null!;
+    public static ConfigEntry<float> DynamicEnemyPowerMaxFactor = null!;
+
+    public static ConfigEntry<bool> BeeHiveEnabled = null!;
+    public static ConfigEntry<float> BeeHiveDistance = null!;
+    public static ConfigEntry<int> BeeHiveNearMin = null!;
+    public static ConfigEntry<int> BeeHiveNearMax = null!;
+    public static ConfigEntry<int> BeeHiveFarMin = null!;
+    public static ConfigEntry<int> BeeHiveFarMax = null!;
+
+    private static void MigrateBool(ConfigFile config, string section, string oldKey, ConfigEntry<bool> target)
     {
-        public static ConfigEntry<int> StartingCredits = null!;
-        public static ConfigEntry<int> StartingQuota = null!;
-        public static ConfigEntry<int> DaysToDeadline = null!;
-        public static ConfigEntry<int> BaseIncrease = null!;
-        public static ConfigEntry<float> CurveSharpness = null!;
-        public static ConfigEntry<float> RandomizerMultiplier = null!;
+        string newKey = target.Definition.Key;
+        var legacy = config.Bind(section, oldKey, false, $"Replaced by {newKey}.");
+        bool value = legacy.Value;
+        config.Remove(legacy.Definition);
 
-        public static ConfigEntry<int> FinalLevel = null!;
-        public static ConfigEntry<int> FinalIncrease = null!;
-        public static ConfigEntry<int> QuotaCap = null!;
+        if (!value) return;
 
-        public static ConfigEntry<bool> EnablePlayerMultiplier = null!;
-        public static ConfigEntry<int> PlayerThreshold = null!;
-        public static ConfigEntry<int> PlayerCap = null!;
-        public static ConfigEntry<float> MultPerPlayer = null!;
+        target.Value = true;
+        Plugin.Log.LogInfo($"Carried '{section}/{oldKey}' over to {newKey}.");
+    }
 
-        public static ConfigEntry<bool> DisableQuota = null!;
-        public static ConfigEntry<float> RolloverAmount = null!;
-        public static ConfigEntry<bool> OvertimeExcludesRollover = null!;
-        public static ConfigEntry<float> RolloverWipePenalty = null!;
-        public static ConfigEntry<bool> RolloverAlertEnabled = null!;
+    internal static void Initialize(ConfigFile config)
+    {
+        StartingCredits = config.Bind(
+            "0. Basic",
+            "StartingCredits",
+            60,
+            "Starting credits for a new lobby."
+        );
 
-        public static ConfigEntry<bool> CreditPenaltiesEnabled = null!;
-        public static ConfigEntry<bool> CreditPenaltiesOnCompanyMoons = null!;
-        public static ConfigEntry<float> CreditPenaltyPercentPerPlayer = null!;
-        public static ConfigEntry<bool> CreditPenaltiesDynamic = null!;
-        public static ConfigEntry<float> CreditPenaltyPercentCap = null!;
-        public static ConfigEntry<float> CreditPenaltyPercentThreshold = null!;
-        public static ConfigEntry<float> CreditPenaltyRecoveryBonus = null!;
+        StartingQuota = config.Bind(
+            "0. Basic",
+            "StartingQuota",
+            130,
+            "Starting quota for a new lobby."
+        );
 
-        public static ConfigEntry<bool> QuotaPenaltiesEnabled = null!;
-        public static ConfigEntry<bool> QuotaPenaltiesOnCompanyMoons = null!;
-        public static ConfigEntry<float> QuotaPenaltyPercentPerPlayer = null!;
-        public static ConfigEntry<bool> QuotaPenaltiesDynamic = null!;
-        public static ConfigEntry<float> QuotaPenaltyPercentCap = null!;
-        public static ConfigEntry<float> QuotaPenaltyPercentThreshold = null!;
-        public static ConfigEntry<float> QuotaPenaltyRecoveryBonus = null!;
+        DaysToDeadline = config.Bind(
+            "0. Basic",
+            "DaysToDeadline",
+            3,
+            "Number of days to meet each quota. Ignored if RandomizeDeadline is enabled."
+        );
+        RandomizeDeadline = config.Bind(
+            "0. Basic",
+            "RandomizeDeadline",
+            false,
+            "Randomize the deadline each quota using Deadline Min/Max instead of a fixed Days To Deadline."
+        );
+        DeadlineMin = config.Bind(
+            "0. Basic",
+            "DeadlineMin",
+            3,
+            "Minimum days for the deadline. REQUIRES 'Randomize Deadline' SET TO TRUE."
+        );
+        DeadlineMax = config.Bind(
+            "0. Basic",
+            "DeadlineMax",
+            5,
+            "Maximum days for the deadline. REQUIRES 'Randomize Deadline' SET TO TRUE."
+        );
+        DeadlineMustChange = config.Bind(
+            "0. Basic",
+            "DeadlineMustChange",
+            true,
+            "After fulfilling a quota, next random deadline has to be different from the previous one. REQUIRES 'Randomize Deadline' SET TO TRUE."
+        );
+        EnableDeadlineBonus = config.Bind(
+            "0. Basic",
+            "EnableDeadlineBonus",
+            false,
+            "Increase deadline as quota grows using either fixed credit interval or exact thresholds."
+        );
+        DeadlineBonusPerQuota = config.Bind(
+            "0. Basic",
+            "DeadlineBonusPerQuota",
+            1000,
+            "Add one day to deadline for every this many credits of quota. 1000 means 1000 quota gets +1 day, 2000 gets +2 and so on. REQUIRES 'Enable Deadline Bonus' SET TO TRUE."
+        );
+        DeadlineBonusMax = config.Bind(
+            "0. Basic",
+            "DeadlineBonusMax",
+            3,
+            "Maximum days quota bonus can add on top of deadline. 0 means no limit. Applies to both interval and thresholds. REQUIRES 'Enable Deadline Bonus' SET TO TRUE."
+        );
+        DeadlineBonusThresholds = config.Bind(
+            "0. Basic",
+            "DeadlineBonusThresholds",
+            "",
+            "Exact quota thresholds instead of fixed interval, comma separated. Example - 1000,2500,5000 adds one day at each one reached. Overrides 'Deadline Bonus Per Quota' whenever it is set. REQUIRES 'Enable Deadline Bonus' SET TO TRUE."
+        );
 
-        public static ConfigEntry<bool> ScrapLossEnabled = null!;
-        public static ConfigEntry<float> ItemsSafeChance = null!;
-        public static ConfigEntry<float> LoseEachScrapChance = null!;
-        public static ConfigEntry<int> MaxLostScrapItems = null!;
+        BaseIncrease = config.Bind(
+            "0. Basic",
+            "BaseIncrease",
+            100,
+            new ConfigDescription(
+                "Base amount the quota increase per each quota. Combined with CurveSharpness as: increase ≈ BaseIncrease * (1 + quota² / Sharpness). With defaults (100, 16) at quota 3, that's 100 * (1 + 9/16) ≈ 156.",
+                new AcceptableValueRange<int>(0, 1000000)
+            )
+        );
+        CurveSharpness = config.Bind(
+            "0. Basic",
+            "CurveSharpness",
+            16f,
+            "Controls how fast the quota ramps up. Higher = slower growth. Formula: increase ≈ BaseIncrease * (1 + quota² / Sharpness). With BaseIncrease=100, Sharpness=16, quota 5 -> 100 * (1 + 25/16) ≈ 256."
+        );
+        RandomizerMultiplier = config.Bind(
+            "0. Basic",
+            "RandomizerMultiplier",
+            1f,
+            new ConfigDescription(
+                "Random variance on each quota increase. Multiplies by a factor in [1 - 0.5*M, 1 + 0.5*M]. 0 = no randomness, 1 = ±50% (vanilla), 2 = ±100%. Above 2 the quota could shrink, so 2 is the limit.",
+                new AcceptableValueRange<float>(0f, 2f)
+            )
+        );
 
-        public static ConfigEntry<bool> ValueLossEnabled = null!;
-        public static ConfigEntry<float> ValueLossPercent = null!;
+        FinalLevel = config.Bind(
+            "1. Leveling",
+            "FinalLevel",
+            -1,
+            "Once the previous quota hits this value, growth stops using the curve and switches to a flat Final Increase per quota. With FinalLevel=10000 and FinalIncrease=200, every quota after $10000 just adds $200. Set -1 to disable."
+        );
+        FinalIncrease = config.Bind(
+            "1. Leveling",
+            "FinalIncrease",
+            200,
+            "Fixed increase used once the quota reaches Final Level. Replaces the curve, so CurveSharpness stops mattering."
+        );
+        QuotaCap = config.Bind(
+            "1. Leveling",
+            "QuotaCap",
+            -1,
+            "Maximum quota value, quota will never increase more than this amount. Set -1 for no limit."
+        );
+        EnableGrowthDampening = config.Bind(
+            "1. Leveling",
+            "EnableGrowthDampening",
+            false,
+            "Slows quota growth down after a while. After Dampening Start At fulfilled quotas, the curve increase gets divided by (1 + (excess / DampeningSharpness)²), where excess = currentQuota - DampeningStartAt."
+        );
+        DampeningStartAt = config.Bind(
+            "1. Leveling",
+            "DampeningStartAt",
+            6,
+            "How many quotas you have to clear before dampening starts. 6 means quotas 1 - 6 are untouched and quota 7 is the first one slowed down."
+        );
+        DampeningSharpness = config.Bind(
+            "1. Leveling",
+            "DampeningSharpness",
+            11f,
+            "Lower values dampen harder. At Start At=6, Sharpness=11, quota 10 -> divisor = 1 + (4/11)² ≈ 1.13, so growth shrinks by ~12%."
+        );
 
-        public static ConfigEntry<bool> RandomizeDeadline = null!;
-        public static ConfigEntry<int> DeadlineMin = null!;
-        public static ConfigEntry<int> DeadlineMax = null!;
-        public static ConfigEntry<bool> DeadlineMustChange = null!;
-        public static ConfigEntry<bool> EnableDeadlineBonus = null!;
-        public static ConfigEntry<int> DeadlineBonusPerQuota = null!;
-        public static ConfigEntry<int> DeadlineBonusMax = null!;
-        public static ConfigEntry<string> DeadlineBonusThresholds = null!;
+        EnablePlayerMultiplier = config.Bind(
+            "2. Player.Scaling",
+            "EnablePlayerMultiplier",
+            false,
+            "Scale each quota increase by lobby size. Formula: (1 + extra * MultPerPlayer), where extra = clamp(playerCount - PlayerThreshold, 0, PlayerCap - PlayerThreshold)."
+        );
+        PlayerThreshold = config.Bind(
+            "2. Player.Scaling",
+            "PlayerThreshold",
+            2,
+            "Player count where the scaling starts. 2 means scaling starts at 3+ players."
+        );
+        PlayerCap = config.Bind(
+            "2. Player.Scaling",
+            "PlayerCap",
+            4,
+            "Player count where scaling stops. 4 means player 5+ don't bump the multiplier further."
+        );
+        MultPerPlayer = config.Bind(
+            "2. Player.Scaling",
+            "MultPerPlayer",
+            0.25f,
+            "Extra multiplier each player adds past the threshold. With 4 players, Threshold=2, Cap=4, MultPerPlayer=0.25, you get 1 + 2*0.25 = 1.5x on quota increases."
+        );
 
-        public static ConfigEntry<bool> EnableGrowthDampening = null!;
-        public static ConfigEntry<int> DampeningStartAt = null!;
-        public static ConfigEntry<float> DampeningSharpness = null!;
+        DisableQuota = config.Bind(
+            "3. Optional",
+            "DisableQuota",
+            false,
+            "Completely disables the quota system."
+        );
+        RolloverAmount = config.Bind(
+            "3. Optional",
+            "RolloverAmount",
+            0.0f,
+            new ConfigDescription(
+                "Percentage of extra scrap value that goes above the set limit and is added to the next quota. 0 = none (vanilla), 0.5 = 50%, 1.0 = 100%.",
+                new AcceptableValueRange<float>(0f, 1f)
+            )
+        );
+        OvertimeExcludesRollover = config.Bind(
+            "3. Optional",
+            "OvertimeExcludesRollover",
+            false,
+            "If true, overtime bonus only counts scrap you sold at the Company above the quota. Stops rollover from inflating the bonus. Only affects scrap conversion part (sold / 5), not the days-left part. Requires RolloverAmount > 0 to have any effect."
+        );
+        RolloverWipePenalty = config.Bind(
+            "3. Optional",
+            "RolloverWipePenalty",
+            0.0f,
+            new ConfigDescription(
+                "Percentage of rollover that is lost when the entire crew dies. 0.5 = lose 50%. Requires RolloverAmount > 0 to have any effect.",
+                new AcceptableValueRange<float>(0f, 1f)
+            )
+        );
+        RolloverAlertEnabled = config.Bind(
+            "3. Optional",
+            "RolloverAlertEnabled",
+            true,
+            "Show red alert once rollover stops covering next quota, after the new quota screen ends. Local to this client. Requires RolloverAmount > 0 to have any effect."
+        );
 
-        public static ConfigEntry<string> ForcedCompanyMoons = null!;
-        public static ConfigEntry<string> ExcludedCompanyMoons = null!;
-        public static ConfigEntry<bool> ApplyLossesOnCompanyMoons = null!;
+        CreditPenaltiesEnabled = config.Bind(
+            "4. Penalties.Credits",
+            "Enabled",
+            false,
+            "Reduce credits when crew members die."
+        );
+        CreditPenaltiesOnCompanyMoons = config.Bind(
+            "4. Penalties.Credits",
+            "OnCompanyMoons",
+            false,
+            "Apply credit penalties even when visiting company moon."
+        );
+        MigrateBool(config, "4. Penalties.Credits", "OnGordion", CreditPenaltiesOnCompanyMoons);
+        CreditPenaltyPercentPerPlayer = config.Bind(
+            "4. Penalties.Credits",
+            "PercentPerPlayer",
+            0.15f,
+            "Credits lost per dead player. 0.15 = lose 15% of credits per death. Ignored when Dynamic is set to true."
+        );
+        CreditPenaltiesDynamic = config.Bind(
+            "4. Penalties.Credits",
+            "Dynamic",
+            false,
+            "Scale credit penalty by: (dead/total) * Percent Cap. With 2 dead out of 8 and Percent Cap=0.05 -> (2/8)*0.05 = 1.25%. When false, the penalty is Percent Per Player * dead, capped at Percent Cap."
+        );
+        CreditPenaltyPercentCap = config.Bind(
+            "4. Penalties.Credits",
+            "PercentCap",
+            0.8f,
+            "Maximum percentage of credits that can be lost."
+        );
+        CreditPenaltyPercentThreshold = config.Bind(
+            "4. Penalties.Credits",
+            "PercentThreshold",
+            0f,
+            "Ignore penalties below this percentage. 0.1 = penalties under 10% are not applied."
+        );
+        CreditPenaltyRecoveryBonus = config.Bind(
+            "4. Penalties.Credits",
+            "RecoveryBonus",
+            0f,
+            "Reduce the penalty when body is recovered. Final = base * (1 - RecoveryBonus * recovered/dead). With 4 dead, 2 recovered, and RecoveryBonus=0.5 the penalty drops by 25% (base * 0.75)."
+        );
 
-        public static ConfigEntry<bool> OnlyLoseCurrentDayLoot = null!;
-        public static ConfigEntry<int> OnlyCurrentDayMaxPlayers = null!;
+        QuotaPenaltiesEnabled = config.Bind(
+            "5. Penalties.Quota",
+            "Enabled",
+            false,
+            "Increase the current quota when crew members die."
+        );
+        QuotaPenaltiesOnCompanyMoons = config.Bind(
+            "5. Penalties.Quota",
+            "OnCompanyMoons",
+            false,
+            "Apply quota penalties even when visiting a company moon."
+        );
+        MigrateBool(config, "5. Penalties.Quota", "OnGordion", QuotaPenaltiesOnCompanyMoons);
+        QuotaPenaltyPercentPerPlayer = config.Bind(
+            "5. Penalties.Quota",
+            "PercentPerPlayer",
+            0.1f,
+            "Quota increase per dead player. 0.1 = +10% to current quota per death. Ignored when Dynamic is true."
+        );
+        QuotaPenaltiesDynamic = config.Bind(
+            "5. Penalties.Quota",
+            "Dynamic",
+            false,
+            "Scale quota increase by: (dead/total) * Percent Cap. With 2 dead out of 8 and Percent Cap=0.5 -> (2/8)*0.5 = 12.5%. When false, the penalty is Percent Per Player * dead, capped at Percent Cap."
+        );
+        QuotaPenaltyPercentCap = config.Bind(
+            "5. Penalties.Quota",
+            "PercentCap",
+            0.5f,
+            "Maximum percentage the quota can increase. 0.5 = quota can increase by at most 50%."
+        );
+        QuotaPenaltyPercentThreshold = config.Bind(
+            "5. Penalties.Quota",
+            "PercentThreshold",
+            0f,
+            "Ignore penalties below this percentage. 0.15 = anything under 15% are not applied."
+        );
+        QuotaPenaltyRecoveryBonus = config.Bind(
+            "5. Penalties.Quota",
+            "RecoveryBonus",
+            0f,
+            "Reduce the quota penalty when bodies are recovered. Final = base * (1 - RecoveryBonus * recovered/dead). With 4 dead, 2 recovered, Recovery Bonus=0.5 penalty shrinks by 25% (base * 0.75)."
+        );
 
-        public static ConfigEntry<bool> EquipmentLossEnabled = null!;
-        public static ConfigEntry<float> LoseEachEquipmentChance = null!;
-        public static ConfigEntry<int> MaxLostEquipmentItems = null!;
+        ScrapLossEnabled = config.Bind(
+            "6. Loss.Scrap",
+            "Enabled",
+            false,
+            "Randomly lose collected scrap when all crew dies. Odds come from ItemsSafeChance and LoseEachScrapChance."
+        );
+        OnlyLoseCurrentDayLoot = config.Bind(
+            "6. Loss.Scrap",
+            "OnlyLoseCurrentDayLoot",
+            false,
+            "Only scrap collected on day of wipe can be lost, anything gathered on earlier days is safe. Applies to Loss Scrap and Loss Value."
+        );
+        MigrateBool(config, "6. Loss.Scrap", "OnlyLoseCurrentRoundLoot", OnlyLoseCurrentDayLoot);
+        OnlyCurrentDayMaxPlayers = config.Bind(
+            "6. Loss.Scrap",
+            "OnlyCurrentDayMaxPlayers",
+            0,
+            new ConfigDescription(
+                "Older scrap is only safe while the lobby has this many players or fewer at the wipe. 1 = solo only, 0 = no limit. REQUIRES 'OnlyLoseCurrentDayLoot' SET TO TRUE.",
+                new AcceptableValueRange<int>(0, 50)
+            )
+        );
+        ItemsSafeChance = config.Bind(
+            "6. Loss.Scrap",
+            "ItemsSafeChance",
+            0.5f,
+            new ConfigDescription(
+                "Chance for each scrap to be protected. Combined with Lose Each Scrap Chance, actual loss chance is (1 - SafeChance) * LoseChance. So Safe=0.5, Lose=0.1 -> 5% per item.",
+                new AcceptableValueRange<float>(0f, 1f)
+            )
+        );
+        LoseEachScrapChance = config.Bind(
+            "6. Loss.Scrap",
+            "LoseEachScrapChance",
+            0.1f,
+            new ConfigDescription(
+                "Chance for unprotected scrap to get lost. 0.2 means 20% on the items that weren't saved by Items Safe Chance.",
+                new AcceptableValueRange<float>(0f, 1f)
+            )
+        );
+        MaxLostScrapItems = config.Bind(
+            "6. Loss.Scrap",
+            "MaxLostScrapItems",
+            2,
+            "Maximum scrap that can be lost per wipe. 0 = no limit. Loose scrap is rolled first."
+        );
 
-        public static ConfigEntry<float> QuotaAnimationSpeed = null!;
+        ValueLossEnabled = config.Bind(
+            "7. Loss.Value",
+            "Enabled",
+            false,
+            "Reduce the scrap value of all ship items when the entire crew is wiped."
+        );
+        ValueLossPercent = config.Bind(
+            "7. Loss.Value",
+            "Percent",
+            0.2f,
+            new ConfigDescription(
+                "How much of the scrap value to reduce per crew wipe. 0.25 = each item loses 25%.",
+                new AcceptableValueRange<float>(0f, 1f)
+            )
+        );
 
-        public static ConfigEntry<bool> MinMaxRateEnabled = null!;
-        public static ConfigEntry<float> MinRate = null!;
-        public static ConfigEntry<float> MaxRate = null!;
-        public static ConfigEntry<bool> RandomRateEnabled = null!;
-        public static ConfigEntry<bool> LastDayRateEnabled = null!;
-        public static ConfigEntry<float> LastDayRangeChance = null!;
-        public static ConfigEntry<float> LastDayMinRate = null!;
-        public static ConfigEntry<float> LastDayMaxRate = null!;
-        public static ConfigEntry<bool> JackpotEnabled = null!;
-        public static ConfigEntry<bool> JackpotLastDayOnly = null!;
-        public static ConfigEntry<float> JackpotChance = null!;
-        public static ConfigEntry<float> JackpotMinRate = null!;
-        public static ConfigEntry<float> JackpotMaxRate = null!;
-        public static ConfigEntry<bool> BuyRateAlertEnabled = null!;
-        public static ConfigEntry<bool> JackpotAlertEnabled = null!;
-        public static ConfigEntry<float> AlertDelaySeconds = null!;
+        EquipmentLossEnabled = config.Bind(
+            "8. Loss.Equipment",
+            "Enabled",
+            false,
+            "Randomly lose purchased equipment when all crew dies."
+        );
+        LoseEachEquipmentChance = config.Bind(
+            "8. Loss.Equipment",
+            "LoseEachEquipmentChance",
+            0.05f,
+            new ConfigDescription(
+                "Chance for each equipment item to be lost. 0.1 = 10% per item.",
+                new AcceptableValueRange<float>(0f, 1f)
+            )
+        );
+        MaxLostEquipmentItems = config.Bind(
+            "8. Loss.Equipment",
+            "MaxLostEquipmentItems",
+            1,
+            "Maximum equipment items that can be lost per wipe. 1 = at most one item is lost. 0 = no limit."
+        );
 
-        public static ConfigEntry<bool> DynamicInteriorSizeEnabled = null!;
-        public static ConfigEntry<float> DynamicInteriorSizeBase = null!;
-        public static ConfigEntry<int> DynamicInteriorSizePlayerThreshold = null!;
-        public static ConfigEntry<PlayerScalingDirection> DynamicInteriorSizeDirection = null!;
-        public static ConfigEntry<float> DynamicInteriorSizeMultPerPlayer = null!;
+        ForcedCompanyMoons = config.Bind(
+            "E. Company.Moons",
+            "ForcedCompanyMoons",
+            "",
+            "Comma separated moon names always treated as a company moon even when not detected as one. Company moon also skips Dynamic sections."
+        );
+        ExcludedCompanyMoons = config.Bind(
+            "E. Company.Moons",
+            "ExcludedCompanyMoons",
+            "",
+            "Comma separated moon names never treated as a company moon even when detected as one. Wins over Forced Company Moons when a name is in both."
+        );
+        ApplyLossesOnCompanyMoons = config.Bind(
+            "E. Company.Moons",
+            "ApplyLossesOnCompanyMoons",
+            false,
+            "Apply Loss Scrap, Loss Value and Loss Equipment on a full crew wipe at a company moon too."
+        );
 
-        public static ConfigEntry<bool> DynamicScrapValueEnabled = null!;
-        public static ConfigEntry<int> DynamicScrapValueOffset = null!;
-        public static ConfigEntry<float> DynamicScrapValueMinMult = null!;
-        public static ConfigEntry<float> DynamicScrapValueMaxMult = null!;
-        public static ConfigEntry<int> DynamicScrapValuePlayerThreshold = null!;
-        public static ConfigEntry<PlayerScalingDirection> DynamicScrapValueDirection = null!;
-        public static ConfigEntry<float> DynamicScrapValueMultPerPlayer = null!;
+        QuotaAnimationSpeed = config.Bind(
+            "9. UI",
+            "QuotaAnimationSpeed",
+            1f,
+            new ConfigDescription(
+                "Speed multiplier for the new quota animation. Higher = faster.",
+                new AcceptableValueRange<float>(0.1f, 2f)
+            )
+        );
 
-        public static ConfigEntry<bool> DynamicScrapAmountEnabled = null!;
-        public static ConfigEntry<int> DynamicScrapAmountValuePerItem = null!;
-        public static ConfigEntry<float> DynamicScrapAmountMinFraction = null!;
-        public static ConfigEntry<int> DynamicScrapAmountCap = null!;
-        public static ConfigEntry<int> DynamicScrapAmountPlayerThreshold = null!;
-        public static ConfigEntry<PlayerScalingDirection> DynamicScrapAmountDirection = null!;
-        public static ConfigEntry<float> DynamicScrapAmountMultPerPlayer = null!;
+        MinMaxRateEnabled = config.Bind(
+            "X. Buy.Rate",
+            "MinMaxEnabled",
+            false,
+            "Keep the Company's daily buy rate between Min Rate and Max Rate. Random Rate Enabled needs to be true."
+        );
+        MinRate = config.Bind(
+            "X. Buy.Rate",
+            "MinRate",
+            0.2f,
+            new ConfigDescription(
+                "Minimum buy rate the Company will pay. 0.2 = 20%.",
+                new AcceptableValueRange<float>(0f, 10f)
+            )
+        );
+        MaxRate = config.Bind(
+            "X. Buy.Rate",
+            "MaxRate",
+            1.2f,
+            new ConfigDescription(
+                "Maximum buy rate the Company will pay. 1.2 = 120%.",
+                new AcceptableValueRange<float>(0f, 10f)
+            )
+        );
+        RandomRateEnabled = config.Bind(
+            "X. Buy.Rate",
+            "RandomRateEnabled",
+            false,
+            "Roll a random buy rate between Min Rate and Max Rate every day. Needs Min Max Enabled. With MinRate=0.4 and MaxRate=1.5 the daily rate lands somewhere between 40% and 150%."
+        );
+        LastDayRateEnabled = config.Bind(
+            "X. Buy.Rate",
+            "LastDayRateEnabled",
+            false,
+            "On the deadline's last day, force the rate through Last Day Min Rate and Last Day Max Rate. If min and max are equal you always get that rate. If they differ, roll Last Day Range Chance: a hit picks a random value in the range, a miss falls back to 100%."
+        );
+        LastDayRangeChance = config.Bind(
+            "X. Buy.Rate",
+            "LastDayRangeChance",
+            0.3f,
+            new ConfigDescription(
+                "Chance the last-day rate actually uses the range instead of falling back to 100%. 0.3 = 30%.",
+                new AcceptableValueRange<float>(0f, 1f)
+            )
+        );
+        LastDayMinRate = config.Bind(
+            "X. Buy.Rate",
+            "LastDayMinRate",
+            1.0f,
+            new ConfigDescription(
+                "Minimum buy rate on the last day. 1.0 = 100%.",
+                new AcceptableValueRange<float>(0f, 10f)
+            )
+        );
+        LastDayMaxRate = config.Bind(
+            "X. Buy.Rate",
+            "LastDayMaxRate",
+            1.2f,
+            new ConfigDescription(
+                "Maximum buy rate on the last day. 1.2 = 120%.",
+                new AcceptableValueRange<float>(0f, 10f)
+            )
+        );
+        JackpotEnabled = config.Bind(
+            "X. Buy.Rate",
+            "JackpotEnabled",
+            false,
+            "Let the daily roll try for a jackpot rate. Checked before Last Day Rate or RandomRate. A hit picks a random value between JackpotMinRate and JackpotMaxRate (or that exact value if they match)."
+        );
+        JackpotLastDayOnly = config.Bind(
+            "X. Buy.Rate",
+            "JackpotLastDayOnly",
+            true,
+            "Only roll for a jackpot on the deadline's last day."
+        );
+        JackpotChance = config.Bind(
+            "X. Buy.Rate",
+            "JackpotChance",
+            0.01f,
+            new ConfigDescription(
+                "Chance the daily roll lands a jackpot. 0.01 = 1% per day. If Jackpot Last Day Only is true, this only fires on the last day.",
+                new AcceptableValueRange<float>(0f, 1f)
+            )
+        );
+        JackpotMinRate = config.Bind(
+            "X. Buy.Rate",
+            "JackpotMinRate",
+            1.5f,
+            new ConfigDescription(
+                "Minimum jackpot rate. 1.5 = 150%. REQUIRES 'JackpotEnabled' SET TO TRUE.",
+                new AcceptableValueRange<float>(0f, 10f)
+            )
+        );
+        JackpotMaxRate = config.Bind(
+            "X. Buy.Rate",
+            "JackpotMaxRate",
+            3.0f,
+            new ConfigDescription(
+                "Maximum jackpot rate. 3.0 = 300%. REQUIRES 'JackpotEnabled' SET TO TRUE.",
+                new AcceptableValueRange<float>(0f, 10f)
+            )
+        );
+        BuyRateAlertEnabled = config.Bind(
+            "X. Buy.Rate",
+            "BuyRateAlertEnabled",
+            false,
+            "Show a yellow on-screen alert with the new buy rate each day. Local to this client."
+        );
+        JackpotAlertEnabled = config.Bind(
+            "X. Buy.Rate",
+            "JackpotAlertEnabled",
+            false,
+            "Show a red SCRAP EMERGENCY alert with sound when a jackpot is rolled. Local to this client."
+        );
+        AlertDelaySeconds = config.Bind(
+            "X. Buy.Rate",
+            "AlertDelaySeconds",
+            3f,
+            new ConfigDescription(
+                "How long to wait before the buy-rate alert pops up. 3s feels fine solo. Bump to 8+ if BetterEXP or DiscountAlerts step on it.",
+                new AcceptableValueRange<float>(0f, 30f)
+            )
+        );
 
-        public static ConfigEntry<bool> DynamicEnemyPowerEnabled = null!;
-        public static ConfigEntry<bool> DynamicEnemyPowerScaleInside = null!;
-        public static ConfigEntry<bool> DynamicEnemyPowerScaleOutside = null!;
-        public static ConfigEntry<bool> DynamicEnemyPowerScaleDaytime = null!;
-        public static ConfigEntry<int> DynamicEnemyPowerPlayerThreshold = null!;
-        public static ConfigEntry<float> DynamicEnemyPowerMultPerPlayer = null!;
-        public static ConfigEntry<float> DynamicEnemyPowerMaxFactor = null!;
+        DynamicInteriorSizeEnabled = config.Bind(
+            "A. Dynamic.Interior.Size",
+            "Enabled",
+            false,
+            "Resize moons interior based on lobby size."
+        );
+        DynamicInteriorSizeBase = config.Bind(
+            "A. Dynamic.Interior.Size",
+            "BaseSize",
+            1.0f,
+            new ConfigDescription(
+                "Interior size at the PlayerThreshold, times moons own size.",
+                new AcceptableValueRange<float>(0.1f, 10f)
+            )
+        );
+        DynamicInteriorSizePlayerThreshold = config.Bind(
+            "A. Dynamic.Interior.Size",
+            "PlayerThreshold",
+            2,
+            new ConfigDescription(
+                "Player count where scaling starts. With PerExtraPlayer it activates above this, with PerMissingPlayer it activates below.",
+                new AcceptableValueRange<int>(1, 32)
+            )
+        );
+        DynamicInteriorSizeDirection = config.Bind(
+            "A. Dynamic.Interior.Size",
+            "ScalingDirection",
+            PlayerScalingDirection.PerExtraPlayer,
+            "PerExtraPlayer: more players = bigger dungeon. PerMissingPlayer: fewer players = bigger dungeon."
+        );
+        DynamicInteriorSizeMultPerPlayer = config.Bind(
+            "A. Dynamic.Interior.Size",
+            "MultPerPlayer",
+            0.1f,
+            new ConfigDescription(
+                "How much the size multiplier changes per qualifying player. threshold=2, PerExtraPlayer, this=0.1 -> 3 players get BaseSize * 1.1.",
+                new AcceptableValueRange<float>(0f, 10f)
+            )
+        );
 
-        private static void MigrateBool(ConfigFile config, string section, string oldKey, ConfigEntry<bool> target)
-        {
-            string newKey = target.Definition.Key;
-            var legacy = config.Bind(section, oldKey, false, $"Replaced by {newKey}.");
-            bool value = legacy.Value;
-            config.Remove(legacy.Definition);
+        DynamicScrapValueEnabled = config.Bind(
+            "B. Dynamic.Scrap.Value",
+            "Enabled",
+            false,
+            "Multiply value of every scrap moon spawns by player factor below."
+        );
+        DynamicScrapValueMinMult = config.Bind(
+            "B. Dynamic.Scrap.Value",
+            "MinValueMultiplier",
+            1.0f,
+            new ConfigDescription(
+                "Low end of an extra multiplier rolled once per landing from the map seed.",
+                new AcceptableValueRange<float>(0f, 100f)
+            )
+        );
+        DynamicScrapValueMaxMult = config.Bind(
+            "B. Dynamic.Scrap.Value",
+            "MaxValueMultiplier",
+            1.0f,
+            new ConfigDescription(
+                "High end of that extra multiplier.",
+                new AcceptableValueRange<float>(0f, 100f)
+            )
+        );
+        DynamicScrapValuePlayerThreshold = config.Bind(
+            "B. Dynamic.Scrap.Value",
+            "PlayerThreshold",
+            2,
+            new ConfigDescription(
+                "Player count where scaling starts. With PerExtraPlayer it activates above this, with PerMissingPlayer it activates below.",
+                new AcceptableValueRange<int>(1, 32)
+            )
+        );
+        DynamicScrapValueDirection = config.Bind(
+            "B. Dynamic.Scrap.Value",
+            "ScalingDirection",
+            PlayerScalingDirection.PerExtraPlayer,
+            "PerMissingPlayer: fewer players = more scrap. PerExtraPlayer: more players = more scrap."
+        );
+        DynamicScrapValueMultPerPlayer = config.Bind(
+            "B. Dynamic.Scrap.Value",
+            "MultPerPlayer",
+            0.15f,
+            new ConfigDescription(
+                "Boost per qualifying player. threshold=2, PerMissingPlayer, this=0.15 -> solo gets factor=1.15.",
+                new AcceptableValueRange<float>(0f, 10f)
+            )
+        );
 
-            if (!value) return;
+        DynamicScrapAmountEnabled = config.Bind(
+            "C. Dynamic.Scrap.Amount",
+            "Enabled",
+            false,
+            "Multiply moons own min and max scrap count by the player factor below. Titans 28-32 becomes 32-37 at factor 1.15."
+        );
+        DynamicScrapAmountCap = config.Bind(
+            "C. Dynamic.Scrap.Amount",
+            "MaxScrapItemsCap",
+            -1,
+            "Most scrap items moon can roll after scaling. -1 = no cap."
+        );
+        DynamicScrapAmountPlayerThreshold = config.Bind(
+            "C. Dynamic.Scrap.Amount",
+            "PlayerThreshold",
+            2,
+            new ConfigDescription(
+                "Player count where scaling starts. With PerExtraPlayer it activates above this, with PerMissingPlayer it activates below.",
+                new AcceptableValueRange<int>(1, 32)
+            )
+        );
+        DynamicScrapAmountDirection = config.Bind(
+            "C. Dynamic.Scrap.Amount",
+            "ScalingDirection",
+            PlayerScalingDirection.PerExtraPlayer,
+            "PerMissingPlayer: fewer players = more items. PerExtraPlayer: more players = more items."
+        );
+        DynamicScrapAmountMultPerPlayer = config.Bind(
+            "C. Dynamic.Scrap.Amount",
+            "MultPerPlayer",
+            0.15f,
+            new ConfigDescription(
+                "Boost per qualifying player. threshold=2, PerMissingPlayer, this=0.15 -> solo gets factor=1.15.",
+                new AcceptableValueRange<float>(0f, 10f)
+            )
+        );
 
-            target.Value = true;
-            Plugin.Log.LogInfo($"Carried '{section}/{oldKey}' over to {newKey}.");
-        }
+        DynamicEnemyPowerEnabled = config.Bind(
+            "D. Dynamic.Enemy.Power",
+            "Enabled",
+            false,
+            "Scale moons enemy power budget by player count. Higher budget = more / stronger enemies can spawn."
+        );
+        DynamicEnemyPowerScaleInside = config.Bind(
+            "D. Dynamic.Enemy.Power",
+            "ScaleInside",
+            true,
+            "Apply scaling to maxEnemyPowerCount (inside enemies). REQUIRES 'Enabled' SET TO TRUE."
+        );
+        DynamicEnemyPowerScaleOutside = config.Bind(
+            "D. Dynamic.Enemy.Power",
+            "ScaleOutside",
+            true,
+            "Apply scaling to maxOutsideEnemyPowerCount (night time outside enemies). REQUIRES 'Enabled' SET TO TRUE."
+        );
+        DynamicEnemyPowerScaleDaytime = config.Bind(
+            "D. Dynamic.Enemy.Power",
+            "ScaleDaytime",
+            false,
+            "Apply scaling to maxDaytimeEnemyPowerCount (daytime outside enemies). REQUIRES 'Enabled' SET TO TRUE."
+        );
+        DynamicEnemyPowerPlayerThreshold = config.Bind(
+            "D. Dynamic.Enemy.Power",
+            "PlayerThreshold",
+            2,
+            new ConfigDescription(
+                "Player count where scaling starts. More players above this = more enemies.",
+                new AcceptableValueRange<int>(1, 32)
+            )
+        );
+        DynamicEnemyPowerMultPerPlayer = config.Bind(
+            "D. Dynamic.Enemy.Power",
+            "MultPerPlayer",
+            0.15f,
+            new ConfigDescription(
+                "Boost per qualifying player. threshold=2, PerExtraPlayer, this=0.15: 4 players -> factor = 1 + 2*0.15 = 1.30.",
+                new AcceptableValueRange<float>(0f, 10f)
+            )
+        );
+        DynamicEnemyPowerMaxFactor = config.Bind(
+            "D. Dynamic.Enemy.Power",
+            "MaxFactor",
+            3.0f,
+            new ConfigDescription(
+                "Safety cap on the resolved factor. Floor is always 1.",
+                new AcceptableValueRange<float>(1f, 20f)
+            )
+        );
 
-        internal static void Initialize(ConfigFile config)
-        {
-            StartingCredits = config.Bind(
-                "0. Basic",
-                "StartingCredits",
-                60,
-                "Starting credits for a new lobby."
-            );
+        BeeHiveEnabled = config.Bind(
+            "F. Bee.Hive",
+            "Enabled",
+            false,
+            "Roll bee hive values from ranges below."
+        );
+        BeeHiveDistance = config.Bind(
+            "F. Bee.Hive",
+            "DistanceThreshold",
+            40f,
+            new ConfigDescription(
+                "Hives closer to ship than this many meters use Near range, rest use Far range.",
+                new AcceptableValueRange<float>(0f, 500f)
+            )
+        );
+        BeeHiveNearMin = config.Bind(
+            "F. Bee.Hive",
+            "NearMinValue",
+            40,
+            new ConfigDescription(
+                "Lowest value of hive near ship.",
+                new AcceptableValueRange<int>(0, 10000)
+            )
+        );
+        BeeHiveNearMax = config.Bind(
+            "F. Bee.Hive",
+            "NearMaxValue",
+            99,
+            new ConfigDescription(
+                "Highest value of hive near ship, this value can roll too.",
+                new AcceptableValueRange<int>(0, 10000)
+            )
+        );
+        BeeHiveFarMin = config.Bind(
+            "F. Bee.Hive",
+            "FarMinValue",
+            50,
+            new ConfigDescription(
+                "Lowest value of hive past DistanceThreshold.",
+                new AcceptableValueRange<int>(0, 10000)
+            )
+        );
+        BeeHiveFarMax = config.Bind(
+            "F. Bee.Hive",
+            "FarMaxValue",
+            149,
+            new ConfigDescription(
+                "Highest value of hive past DistanceThreshold.",
+                new AcceptableValueRange<int>(0, 10000)
+            )
+        );
 
-            StartingQuota = config.Bind(
-                "0. Basic",
-                "StartingQuota",
-                130,
-                "Starting quota for a new lobby."
-            );
-
-            DaysToDeadline = config.Bind(
-                "0. Basic",
-                "DaysToDeadline",
-                3,
-                "Number of days to meet each quota. Ignored if RandomizeDeadline is enabled."
-            );
-            RandomizeDeadline = config.Bind(
-                "0. Basic",
-                "RandomizeDeadline",
-                false,
-                "Randomize the deadline each quota using Deadline Min/Max instead of a fixed Days To Deadline."
-            );
-            DeadlineMin = config.Bind(
-                "0. Basic",
-                "DeadlineMin",
-                3,
-                "Minimum days for the deadline. REQUIRES 'Randomize Deadline' SET TO TRUE."
-            );
-            DeadlineMax = config.Bind(
-                "0. Basic",
-                "DeadlineMax",
-                5,
-                "Maximum days for the deadline. REQUIRES 'Randomize Deadline' SET TO TRUE."
-            );
-            DeadlineMustChange = config.Bind(
-                "0. Basic",
-                "DeadlineMustChange",
-                true,
-                "After fulfilling a quota, next random deadline has to be different from the previous one. REQUIRES 'Randomize Deadline' SET TO TRUE."
-            );
-            EnableDeadlineBonus = config.Bind(
-                "0. Basic",
-                "EnableDeadlineBonus",
-                false,
-                "Increase deadline as quota grows using either fixed credit interval or exact thresholds."
-            );
-            DeadlineBonusPerQuota = config.Bind(
-                "0. Basic",
-                "DeadlineBonusPerQuota",
-                1000,
-                "Add one day to deadline for every this many credits of quota. 1000 means 1000 quota gets +1 day, 2000 gets +2 and so on. REQUIRES 'Enable Deadline Bonus' SET TO TRUE."
-            );
-            DeadlineBonusMax = config.Bind(
-                "0. Basic",
-                "DeadlineBonusMax",
-                3,
-                "Maximum days quota bonus can add on top of deadline. 0 means no limit. Applies to both interval and thresholds. REQUIRES 'Enable Deadline Bonus' SET TO TRUE."
-            );
-            DeadlineBonusThresholds = config.Bind(
-                "0. Basic",
-                "DeadlineBonusThresholds",
-                "",
-                "Exact quota thresholds instead of fixed interval, comma separated. Example - 1000,2500,5000 adds one day at each one reached. Overrides 'Deadline Bonus Per Quota' whenever it is set. REQUIRES 'Enable Deadline Bonus' SET TO TRUE."
-            );
-
-            BaseIncrease = config.Bind(
-                "0. Basic",
-                "BaseIncrease",
-                100,
-                new ConfigDescription(
-                    "Base amount the quota increase per each quota. Combined with CurveSharpness as: increase ≈ BaseIncrease * (1 + quota² / Sharpness). With defaults (100, 16) at quota 3, that's 100 * (1 + 9/16) ≈ 156.",
-                    new AcceptableValueRange<int>(0, 1000000)
-                )
-            );
-            CurveSharpness = config.Bind(
-                "0. Basic",
-                "CurveSharpness",
-                16f,
-                "Controls how fast the quota ramps up. Higher = slower growth. Formula: increase ≈ BaseIncrease * (1 + quota² / Sharpness). With BaseIncrease=100, Sharpness=16, quota 5 -> 100 * (1 + 25/16) ≈ 256."
-            );
-            RandomizerMultiplier = config.Bind(
-                "0. Basic",
-                "RandomizerMultiplier",
-                1f,
-                new ConfigDescription(
-                    "Random variance on each quota increase. Multiplies by a factor in [1 - 0.5*M, 1 + 0.5*M]. 0 = no randomness, 1 = ±50% (vanilla), 2 = ±100%. Above 2 the quota could shrink, so 2 is the limit.",
-                    new AcceptableValueRange<float>(0f, 2f)
-                )
-            );
-
-            FinalLevel = config.Bind(
-                "1. Leveling",
-                "FinalLevel",
-                -1,
-                "Once the previous quota hits this value, growth stops using the curve and switches to a flat Final Increase per quota. With FinalLevel=10000 and FinalIncrease=200, every quota after $10000 just adds $200. Set -1 to disable."
-            );
-            FinalIncrease = config.Bind(
-                "1. Leveling",
-                "FinalIncrease",
-                200,
-                "Fixed increase used once the quota reaches Final Level. Replaces the curve, so CurveSharpness stops mattering."
-            );
-            QuotaCap = config.Bind(
-                "1. Leveling",
-                "QuotaCap",
-                -1,
-                "Maximum quota value, quota will never increase more than this amount. Set -1 for no limit."
-            );
-            EnableGrowthDampening = config.Bind(
-                "1. Leveling",
-                "EnableGrowthDampening",
-                false,
-                "Slows quota growth down after a while. After Dampening Start At fulfilled quotas, the curve increase gets divided by (1 + (excess / DampeningSharpness)²), where excess = currentQuota - DampeningStartAt."
-            );
-            DampeningStartAt = config.Bind(
-                "1. Leveling",
-                "DampeningStartAt",
-                6,
-                "How many quotas you have to clear before dampening starts. 6 means quotas 1 - 6 are untouched and quota 7 is the first one slowed down."
-            );
-            DampeningSharpness = config.Bind(
-                "1. Leveling",
-                "DampeningSharpness",
-                11f,
-                "Lower values dampen harder. At Start At=6, Sharpness=11, quota 10 -> divisor = 1 + (4/11)² ≈ 1.13, so growth shrinks by ~12%."
-            );
-
-            EnablePlayerMultiplier = config.Bind(
-                "2. Player.Scaling",
-                "EnablePlayerMultiplier",
-                false,
-                "Scale each quota increase by lobby size. Formula: (1 + extra * MultPerPlayer), where extra = clamp(playerCount - PlayerThreshold, 0, PlayerCap - PlayerThreshold)."
-            );
-            PlayerThreshold = config.Bind(
-                "2. Player.Scaling",
-                "PlayerThreshold",
-                2,
-                "Player count where the scaling starts. 2 means scaling starts at 3+ players."
-            );
-            PlayerCap = config.Bind(
-                "2. Player.Scaling",
-                "PlayerCap",
-                4,
-                "Player count where scaling stops. 4 means player 5+ don't bump the multiplier further."
-            );
-            MultPerPlayer = config.Bind(
-                "2. Player.Scaling",
-                "MultPerPlayer",
-                0.25f,
-                "Extra multiplier each player adds past the threshold. With 4 players, Threshold=2, Cap=4, MultPerPlayer=0.25, you get 1 + 2*0.25 = 1.5x on quota increases."
-            );
-
-            DisableQuota = config.Bind(
-                "3. Optional",
-                "DisableQuota",
-                false,
-                "Completely disables the quota system."
-            );
-            RolloverAmount = config.Bind(
-                "3. Optional",
-                "RolloverAmount",
-                0.0f,
-                new ConfigDescription(
-                    "Percentage of extra scrap value that goes above the set limit and is added to the next quota. 0 = none (vanilla), 0.5 = 50%, 1.0 = 100%.",
-                    new AcceptableValueRange<float>(0f, 1f)
-                )
-            );
-            OvertimeExcludesRollover = config.Bind(
-                "3. Optional",
-                "OvertimeExcludesRollover",
-                false,
-                "If true, overtime bonus only counts scrap you sold at the Company above the quota. Stops rollover from inflating the bonus. Only affects scrap conversion part (sold / 5), not the days-left part. Requires RolloverAmount > 0 to have any effect."
-            );
-            RolloverWipePenalty = config.Bind(
-                "3. Optional",
-                "RolloverWipePenalty",
-                0.0f,
-                new ConfigDescription(
-                    "Percentage of rollover that is lost when the entire crew dies. 0.5 = lose 50%. Requires RolloverAmount > 0 to have any effect.",
-                    new AcceptableValueRange<float>(0f, 1f)
-                )
-            );
-            RolloverAlertEnabled = config.Bind(
-                "3. Optional",
-                "RolloverAlertEnabled",
-                true,
-                "Show red alert once rollover stops covering next quota, after the new quota screen ends. Local to this client. Requires RolloverAmount > 0 to have any effect."
-            );
-
-            CreditPenaltiesEnabled = config.Bind(
-                "4. Penalties.Credits",
-                "Enabled",
-                false,
-                "Reduce credits when crew members die."
-            );
-            CreditPenaltiesOnCompanyMoons = config.Bind(
-                "4. Penalties.Credits",
-                "OnCompanyMoons",
-                false,
-                "Apply credit penalties even when visiting company moon."
-            );
-            MigrateBool(config, "4. Penalties.Credits", "OnGordion", CreditPenaltiesOnCompanyMoons);
-            CreditPenaltyPercentPerPlayer = config.Bind(
-                "4. Penalties.Credits",
-                "PercentPerPlayer",
-                0.15f,
-                "Credits lost per dead player. 0.15 = lose 15% of credits per death. Ignored when Dynamic is set to true."
-            );
-            CreditPenaltiesDynamic = config.Bind(
-                "4. Penalties.Credits",
-                "Dynamic",
-                false,
-                "Scale credit penalty by: (dead/total) * Percent Cap. With 2 dead out of 8 and Percent Cap=0.05 -> (2/8)*0.05 = 1.25%. When false, the penalty is Percent Per Player * dead, capped at Percent Cap."
-            );
-            CreditPenaltyPercentCap = config.Bind(
-                "4. Penalties.Credits",
-                "PercentCap",
-                0.8f,
-                "Maximum percentage of credits that can be lost."
-            );
-            CreditPenaltyPercentThreshold = config.Bind(
-                "4. Penalties.Credits",
-                "PercentThreshold",
-                0f,
-                "Ignore penalties below this percentage. 0.1 = penalties under 10% are not applied."
-            );
-            CreditPenaltyRecoveryBonus = config.Bind(
-                "4. Penalties.Credits",
-                "RecoveryBonus",
-                0f,
-                "Reduce the penalty when body is recovered. Final = base * (1 - RecoveryBonus * recovered/dead). With 4 dead, 2 recovered, and RecoveryBonus=0.5 the penalty drops by 25% (base * 0.75)."
-            );
-
-            QuotaPenaltiesEnabled = config.Bind(
-                "5. Penalties.Quota",
-                "Enabled",
-                false,
-                "Increase the current quota when crew members die."
-            );
-            QuotaPenaltiesOnCompanyMoons = config.Bind(
-                "5. Penalties.Quota",
-                "OnCompanyMoons",
-                false,
-                "Apply quota penalties even when visiting a company moon."
-            );
-            MigrateBool(config, "5. Penalties.Quota", "OnGordion", QuotaPenaltiesOnCompanyMoons);
-            QuotaPenaltyPercentPerPlayer = config.Bind(
-                "5. Penalties.Quota",
-                "PercentPerPlayer",
-                0.1f,
-                "Quota increase per dead player. 0.1 = +10% to current quota per death. Ignored when Dynamic is true."
-            );
-            QuotaPenaltiesDynamic = config.Bind(
-                "5. Penalties.Quota",
-                "Dynamic",
-                false,
-                "Scale quota increase by: (dead/total) * Percent Cap. With 2 dead out of 8 and Percent Cap=0.5 -> (2/8)*0.5 = 12.5%. When false, the penalty is Percent Per Player * dead, capped at Percent Cap."
-            );
-            QuotaPenaltyPercentCap = config.Bind(
-                "5. Penalties.Quota",
-                "PercentCap",
-                0.5f,
-                "Maximum percentage the quota can increase. 0.5 = quota can increase by at most 50%."
-            );
-            QuotaPenaltyPercentThreshold = config.Bind(
-                "5. Penalties.Quota",
-                "PercentThreshold",
-                0f,
-                "Ignore penalties below this percentage. 0.15 = anything under 15% are not applied."
-            );
-            QuotaPenaltyRecoveryBonus = config.Bind(
-                "5. Penalties.Quota",
-                "RecoveryBonus",
-                0f,
-                "Reduce the quota penalty when bodies are recovered. Final = base * (1 - RecoveryBonus * recovered/dead). With 4 dead, 2 recovered, Recovery Bonus=0.5 penalty shrinks by 25% (base * 0.75)."
-            );
-
-            ScrapLossEnabled = config.Bind(
-                "6. Loss.Scrap",
-                "Enabled",
-                false,
-                "Randomly lose collected scrap when all crew dies. Odds come from ItemsSafeChance and LoseEachScrapChance."
-            );
-            OnlyLoseCurrentDayLoot = config.Bind(
-                "6. Loss.Scrap",
-                "OnlyLoseCurrentDayLoot",
-                false,
-                "Only scrap collected on day of wipe can be lost, anything gathered on earlier days is safe. Applies to Loss Scrap and Loss Value."
-            );
-            MigrateBool(config, "6. Loss.Scrap", "OnlyLoseCurrentRoundLoot", OnlyLoseCurrentDayLoot);
-            OnlyCurrentDayMaxPlayers = config.Bind(
-                "6. Loss.Scrap",
-                "OnlyCurrentDayMaxPlayers",
-                0,
-                new ConfigDescription(
-                    "Older scrap is only safe while the lobby has this many players or fewer at the wipe. 1 = solo only, 0 = no limit. REQUIRES 'OnlyLoseCurrentDayLoot' SET TO TRUE.",
-                    new AcceptableValueRange<int>(0, 50)
-                )
-            );
-            ItemsSafeChance = config.Bind(
-                "6. Loss.Scrap",
-                "ItemsSafeChance",
-                0.5f,
-                new ConfigDescription(
-                    "Chance for each scrap to be protected. Combined with Lose Each Scrap Chance, actual loss chance is (1 - SafeChance) * LoseChance. So Safe=0.5, Lose=0.1 -> 5% per item.",
-                    new AcceptableValueRange<float>(0f, 1f)
-                )
-            );
-            LoseEachScrapChance = config.Bind(
-                "6. Loss.Scrap",
-                "LoseEachScrapChance",
-                0.1f,
-                new ConfigDescription(
-                    "Chance for unprotected scrap to get lost. 0.2 means 20% on the items that weren't saved by Items Safe Chance.",
-                    new AcceptableValueRange<float>(0f, 1f)
-                )
-            );
-            MaxLostScrapItems = config.Bind(
-                "6. Loss.Scrap",
-                "MaxLostScrapItems",
-                2,
-                "Maximum scrap that can be lost per wipe. 0 = no limit. Loose scrap is rolled first."
-            );
-
-            ValueLossEnabled = config.Bind(
-                "7. Loss.Value",
-                "Enabled",
-                false,
-                "Reduce the scrap value of all ship items when the entire crew is wiped."
-            );
-            ValueLossPercent = config.Bind(
-                "7. Loss.Value",
-                "Percent",
-                0.2f,
-                new ConfigDescription(
-                    "How much of the scrap value to reduce per crew wipe. 0.25 = each item loses 25%.",
-                    new AcceptableValueRange<float>(0f, 1f)
-                )
-            );
-
-            EquipmentLossEnabled = config.Bind(
-                "8. Loss.Equipment",
-                "Enabled",
-                false,
-                "Randomly lose purchased equipment when all crew dies."
-            );
-            LoseEachEquipmentChance = config.Bind(
-                "8. Loss.Equipment",
-                "LoseEachEquipmentChance",
-                0.05f,
-                new ConfigDescription(
-                    "Chance for each equipment item to be lost. 0.1 = 10% per item.",
-                    new AcceptableValueRange<float>(0f, 1f)
-                )
-            );
-            MaxLostEquipmentItems = config.Bind(
-                "8. Loss.Equipment",
-                "MaxLostEquipmentItems",
-                1,
-                "Maximum equipment items that can be lost per wipe. 1 = at most one item is lost. 0 = no limit."
-            );
-
-            ForcedCompanyMoons = config.Bind(
-                "E. Company.Moons",
-                "ForcedCompanyMoons",
-                "",
-                "Comma separated moon names always treated as a company moon even when not detected as one. Company moon also skips Dynamic sections."
-            );
-            ExcludedCompanyMoons = config.Bind(
-                "E. Company.Moons",
-                "ExcludedCompanyMoons",
-                "",
-                "Comma separated moon names never treated as a company moon even when detected as one. Wins over Forced Company Moons when a name is in both."
-            );
-            ApplyLossesOnCompanyMoons = config.Bind(
-                "E. Company.Moons",
-                "ApplyLossesOnCompanyMoons",
-                false,
-                "Apply Loss Scrap, Loss Value and Loss Equipment on a full crew wipe at a company moon too."
-            );
-
-            QuotaAnimationSpeed = config.Bind(
-                "9. UI",
-                "QuotaAnimationSpeed",
-                1f,
-                new ConfigDescription(
-                    "Speed multiplier for the new quota animation. Higher = faster.",
-                    new AcceptableValueRange<float>(0.1f, 2f)
-                )
-            );
-
-            MinMaxRateEnabled = config.Bind(
-                "X. Buy.Rate",
-                "MinMaxEnabled",
-                false,
-                "Keep the Company's daily buy rate between Min Rate and Max Rate. Random Rate Enabled needs to be true."
-            );
-            MinRate = config.Bind(
-                "X. Buy.Rate",
-                "MinRate",
-                0.2f,
-                new ConfigDescription(
-                    "Minimum buy rate the Company will pay. 0.2 = 20%.",
-                    new AcceptableValueRange<float>(0f, 10f)
-                )
-            );
-            MaxRate = config.Bind(
-                "X. Buy.Rate",
-                "MaxRate",
-                1.2f,
-                new ConfigDescription(
-                    "Maximum buy rate the Company will pay. 1.2 = 120%.",
-                    new AcceptableValueRange<float>(0f, 10f)
-                )
-            );
-            RandomRateEnabled = config.Bind(
-                "X. Buy.Rate",
-                "RandomRateEnabled",
-                false,
-                "Roll a random buy rate between Min Rate and Max Rate every day. Needs Min Max Enabled. With MinRate=0.4 and MaxRate=1.5 the daily rate lands somewhere between 40% and 150%."
-            );
-            LastDayRateEnabled = config.Bind(
-                "X. Buy.Rate",
-                "LastDayRateEnabled",
-                false,
-                "On the deadline's last day, force the rate through Last Day Min Rate and Last Day Max Rate. If min and max are equal you always get that rate. If they differ, roll Last Day Range Chance: a hit picks a random value in the range, a miss falls back to 100%."
-            );
-            LastDayRangeChance = config.Bind(
-                "X. Buy.Rate",
-                "LastDayRangeChance",
-                0.3f,
-                new ConfigDescription(
-                    "Chance the last-day rate actually uses the range instead of falling back to 100%. 0.3 = 30%.",
-                    new AcceptableValueRange<float>(0f, 1f)
-                )
-            );
-            LastDayMinRate = config.Bind(
-                "X. Buy.Rate",
-                "LastDayMinRate",
-                1.0f,
-                new ConfigDescription(
-                    "Minimum buy rate on the last day. 1.0 = 100%.",
-                    new AcceptableValueRange<float>(0f, 10f)
-                )
-            );
-            LastDayMaxRate = config.Bind(
-                "X. Buy.Rate",
-                "LastDayMaxRate",
-                1.2f,
-                new ConfigDescription(
-                    "Maximum buy rate on the last day. 1.2 = 120%.",
-                    new AcceptableValueRange<float>(0f, 10f)
-                )
-            );
-            JackpotEnabled = config.Bind(
-                "X. Buy.Rate",
-                "JackpotEnabled",
-                false,
-                "Let the daily roll try for a jackpot rate. Checked before Last Day Rate or RandomRate. A hit picks a random value between JackpotMinRate and JackpotMaxRate (or that exact value if they match)."
-            );
-            JackpotLastDayOnly = config.Bind(
-                "X. Buy.Rate",
-                "JackpotLastDayOnly",
-                true,
-                "Only roll for a jackpot on the deadline's last day."
-            );
-            JackpotChance = config.Bind(
-                "X. Buy.Rate",
-                "JackpotChance",
-                0.01f,
-                new ConfigDescription(
-                    "Chance the daily roll lands a jackpot. 0.01 = 1% per day. If Jackpot Last Day Only is true, this only fires on the last day.",
-                    new AcceptableValueRange<float>(0f, 1f)
-                )
-            );
-            JackpotMinRate = config.Bind(
-                "X. Buy.Rate",
-                "JackpotMinRate",
-                1.5f,
-                new ConfigDescription(
-                    "Minimum jackpot rate. 1.5 = 150%. REQUIRES 'JackpotEnabled' SET TO TRUE.",
-                    new AcceptableValueRange<float>(0f, 10f)
-                )
-            );
-            JackpotMaxRate = config.Bind(
-                "X. Buy.Rate",
-                "JackpotMaxRate",
-                3.0f,
-                new ConfigDescription(
-                    "Maximum jackpot rate. 3.0 = 300%. REQUIRES 'JackpotEnabled' SET TO TRUE.",
-                    new AcceptableValueRange<float>(0f, 10f)
-                )
-            );
-            BuyRateAlertEnabled = config.Bind(
-                "X. Buy.Rate",
-                "BuyRateAlertEnabled",
-                false,
-                "Show a yellow on-screen alert with the new buy rate each day. Local to this client."
-            );
-            JackpotAlertEnabled = config.Bind(
-                "X. Buy.Rate",
-                "JackpotAlertEnabled",
-                false,
-                "Show a red SCRAP EMERGENCY alert with sound when a jackpot is rolled. Local to this client."
-            );
-            AlertDelaySeconds = config.Bind(
-                "X. Buy.Rate",
-                "AlertDelaySeconds",
-                3f,
-                new ConfigDescription(
-                    "How long to wait before the buy-rate alert pops up. 3s feels fine solo. Bump to 8+ if BetterEXP or DiscountAlerts step on it.",
-                    new AcceptableValueRange<float>(0f, 30f)
-                )
-            );
-
-            DynamicInteriorSizeEnabled = config.Bind(
-                "A. Dynamic.Interior.Size",
-                "Enabled",
-                false,
-                "Resize the moons interior based on lobby size."
-            );
-            DynamicInteriorSizeBase = config.Bind(
-                "A. Dynamic.Interior.Size",
-                "BaseSize",
-                1.0f,
-                new ConfigDescription(
-                    "factorySizeMultiplier at the PlayerThreshold. 1.0 = vanilla size and it scales up from there per extra player.",
-                    new AcceptableValueRange<float>(0f, 10f)
-                )
-            );
-            DynamicInteriorSizePlayerThreshold = config.Bind(
-                "A. Dynamic.Interior.Size",
-                "PlayerThreshold",
-                2,
-                new ConfigDescription(
-                    "Player count where scaling starts. With PerExtraPlayer it activates above this, with PerMissingPlayer it activates below.",
-                    new AcceptableValueRange<int>(1, 32)
-                )
-            );
-            DynamicInteriorSizeDirection = config.Bind(
-                "A. Dynamic.Interior.Size",
-                "ScalingDirection",
-                PlayerScalingDirection.PerExtraPlayer,
-                "PerExtraPlayer: more players = bigger dungeon. PerMissingPlayer: fewer players = bigger dungeon."
-            );
-            DynamicInteriorSizeMultPerPlayer = config.Bind(
-                "A. Dynamic.Interior.Size",
-                "MultPerPlayer",
-                0.1f,
-                new ConfigDescription(
-                    "How much the size multiplier changes per qualifying player. threshold=2, PerExtraPlayer, this=0.1 -> 3 players get BaseSize * 1.1.",
-                    new AcceptableValueRange<float>(0f, 10f)
-                )
-            );
-
-            DynamicScrapValueEnabled = config.Bind(
-                "B. Dynamic.Scrap.Value",
-                "Enabled",
-                false,
-                "Scale the moons min/max scrap value by player count."
-            );
-            DynamicScrapValueOffset = config.Bind(
-                "B. Dynamic.Scrap.Value",
-                "ScrapValueOffset",
-                0,
-                "Flat credits added to both min and max after scaling. Leave at 0 to only use proportional scaling."
-            );
-            DynamicScrapValueMinMult = config.Bind(
-                "B. Dynamic.Scrap.Value",
-                "MinValueMultiplier",
-                1.0f,
-                new ConfigDescription(
-                    "minTotalScrapValue = round(baseMinTotalScrapValue * this * factor) + ScrapValueOffset.",
-                    new AcceptableValueRange<float>(0f, 100f)
-                )
-            );
-            DynamicScrapValueMaxMult = config.Bind(
-                "B. Dynamic.Scrap.Value",
-                "MaxValueMultiplier",
-                1.0f,
-                new ConfigDescription(
-                    "maxTotalScrapValue = round(baseMaxTotalScrapValue * this * factor) + ScrapValueOffset. Keep it at or above MinValueMultiplier.",
-                    new AcceptableValueRange<float>(0f, 100f)
-                )
-            );
-            DynamicScrapValuePlayerThreshold = config.Bind(
-                "B. Dynamic.Scrap.Value",
-                "PlayerThreshold",
-                2,
-                new ConfigDescription(
-                    "Player count where scaling starts. With PerExtraPlayer it activates above this, with PerMissingPlayer it activates below.",
-                    new AcceptableValueRange<int>(1, 32)
-                )
-            );
-            DynamicScrapValueDirection = config.Bind(
-                "B. Dynamic.Scrap.Value",
-                "ScalingDirection",
-                PlayerScalingDirection.PerExtraPlayer,
-                "PerMissingPlayer: fewer players = more scrap. PerExtraPlayer: more players = more scrap."
-            );
-            DynamicScrapValueMultPerPlayer = config.Bind(
-                "B. Dynamic.Scrap.Value",
-                "MultPerPlayer",
-                0.15f,
-                new ConfigDescription(
-                    "Boost per qualifying player. threshold=2, PerMissingPlayer, this=0.15 -> solo gets factor=1.15.",
-                    new AcceptableValueRange<float>(0f, 10f)
-                )
-            );
-
-            DynamicScrapAmountEnabled = config.Bind(
-                "C. Dynamic.Scrap.Amount",
-                "Enabled",
-                false,
-                "Scale the moons min/max scrap item count off baseMinTotalScrapValue."
-            );
-            DynamicScrapAmountValuePerItem = config.Bind(
-                "C. Dynamic.Scrap.Amount",
-                "ValuePerScrapItem",
-                25,
-                new ConfigDescription(
-                    "Divisor that turns scaled baseMinTotalScrapValue into item count. maxScrap = (baseMinTotalScrapValue * factor) / this. Lower numbers mean more items per moon. At baseMinTotalScrapValue=200, factor=1.15, this=25 you get maxScrap = floor(230/25) = 9.",
-                    new AcceptableValueRange<int>(1, 1000)
-                )
-            );
-            DynamicScrapAmountMinFraction = config.Bind(
-                "C. Dynamic.Scrap.Amount",
-                "MinScrapFraction",
-                0.6f,
-                new ConfigDescription(
-                    "minScrap = round(maxScrap * this). At maxScrap=9 and this=0.6 you get minScrap = round(5.4) = 5.",
-                    new AcceptableValueRange<float>(0f, 1f)
-                )
-            );
-            DynamicScrapAmountCap = config.Bind(
-                "C. Dynamic.Scrap.Amount",
-                "MaxScrapItemsCap",
-                -1,
-                "Hard upper bound on maxScrap no matter what the formula says. Set -1 to turn cap off."
-            );
-            DynamicScrapAmountPlayerThreshold = config.Bind(
-                "C. Dynamic.Scrap.Amount",
-                "PlayerThreshold",
-                2,
-                new ConfigDescription(
-                    "Player count where scaling starts. With PerExtraPlayer it activates above this, with PerMissingPlayer it activates below.",
-                    new AcceptableValueRange<int>(1, 32)
-                )
-            );
-            DynamicScrapAmountDirection = config.Bind(
-                "C. Dynamic.Scrap.Amount",
-                "ScalingDirection",
-                PlayerScalingDirection.PerExtraPlayer,
-                "PerMissingPlayer: fewer players = more items. PerExtraPlayer: more players = more items."
-            );
-            DynamicScrapAmountMultPerPlayer = config.Bind(
-                "C. Dynamic.Scrap.Amount",
-                "MultPerPlayer",
-                0.15f,
-                new ConfigDescription(
-                    "Boost per qualifying player. threshold=2, PerMissingPlayer, this=0.15 -> solo gets factor=1.15.",
-                    new AcceptableValueRange<float>(0f, 10f)
-                )
-            );
-
-            DynamicEnemyPowerEnabled = config.Bind(
-                "D. Dynamic.Enemy.Power",
-                "Enabled",
-                false,
-                "Scale moons enemy power budget by player count. Higher budget = more / stronger enemies can spawn."
-            );
-            DynamicEnemyPowerScaleInside = config.Bind(
-                "D. Dynamic.Enemy.Power",
-                "ScaleInside",
-                true,
-                "Apply scaling to maxEnemyPowerCount (inside enemies). REQUIRES 'Enabled' SET TO TRUE."
-            );
-            DynamicEnemyPowerScaleOutside = config.Bind(
-                "D. Dynamic.Enemy.Power",
-                "ScaleOutside",
-                true,
-                "Apply scaling to maxOutsideEnemyPowerCount (night time outside enemies). REQUIRES 'Enabled' SET TO TRUE."
-            );
-            DynamicEnemyPowerScaleDaytime = config.Bind(
-                "D. Dynamic.Enemy.Power",
-                "ScaleDaytime",
-                false,
-                "Apply scaling to maxDaytimeEnemyPowerCount (daytime outside enemies). REQUIRES 'Enabled' SET TO TRUE."
-            );
-            DynamicEnemyPowerPlayerThreshold = config.Bind(
-                "D. Dynamic.Enemy.Power",
-                "PlayerThreshold",
-                2,
-                new ConfigDescription(
-                    "Player count where scaling starts. More players above this = more enemies.",
-                    new AcceptableValueRange<int>(1, 32)
-                )
-            );
-            DynamicEnemyPowerMultPerPlayer = config.Bind(
-                "D. Dynamic.Enemy.Power",
-                "MultPerPlayer",
-                0.15f,
-                new ConfigDescription(
-                    "Boost per qualifying player. threshold=2, PerExtraPlayer, this=0.15: 4 players -> factor = 1 + 2*0.15 = 1.30.",
-                    new AcceptableValueRange<float>(0f, 10f)
-                )
-            );
-            DynamicEnemyPowerMaxFactor = config.Bind(
-                "D. Dynamic.Enemy.Power",
-                "MaxFactor",
-                3.0f,
-                new ConfigDescription(
-                    "Safety cap on the resolved factor. Floor is always 1.",
-                    new AcceptableValueRange<float>(1f, 20f)
-                )
-            );
-
-            config.Save();
-        }
+        config.Save();
     }
 }

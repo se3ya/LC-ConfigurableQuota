@@ -4,213 +4,212 @@ using System.IO;
 using BepInEx;
 using BepInEx.Configuration;
 
-namespace ConfigurableQuota.Compat
+namespace ConfigurableQuota.Compat;
+
+internal enum ConstellationDeadlineMode
 {
-    internal enum ConstellationDeadlineMode
+    UseGlobal,
+    Fixed,
+    Random
+}
+
+internal static class ConstellationDeadlineConfig
+{
+    private const string FileName = "ConfigurableQuota_Constellations.cfg";
+    private const string SectionPrefix = "Constellation: ";
+
+    private sealed class ConstellationEntries
     {
-        UseGlobal,
-        Fixed,
-        Random
+        internal ConfigEntry<string> DeadlineMode = null!;
+        internal ConfigEntry<int> FixedDays = null!;
+        internal ConfigEntry<int> DeadlineMin = null!;
+        internal ConfigEntry<int> DeadlineMax = null!;
     }
 
-    internal static class ConstellationDeadlineConfig
+    private static readonly Dictionary<string, ConstellationEntries> Entries = new(StringComparer.OrdinalIgnoreCase);
+
+    private static ConfigFile? _constellationConfig;
+    private static bool _initialized;
+    private static bool _loggedConfigFailure;
+
+    internal static void Initialize()
     {
-        private const string FileName = "ConfigurableQuota_Constellations.cfg";
-        private const string SectionPrefix = "Constellation: ";
+        if (_initialized)
+            return;
 
-        private sealed class ConstellationEntries
+        _initialized = true;
+        if (!LethalConstellationsCompat.IsInstalled)
+            return;
+
+        LoadConfig();
+        RefreshSections();
+    }
+
+    internal static void RefreshSections()
+    {
+        if (!LethalConstellationsCompat.IsInstalled)
+            return;
+
+        if (!LoadConfig())
+            return;
+
+        try
         {
-            internal ConfigEntry<string> DeadlineMode = null!;
-            internal ConfigEntry<int> FixedDays = null!;
-            internal ConfigEntry<int> DeadlineMin = null!;
-            internal ConfigEntry<int> DeadlineMax = null!;
-        }
-
-        private static readonly Dictionary<string, ConstellationEntries> Entries = new(StringComparer.OrdinalIgnoreCase);
-
-        private static ConfigFile? _constellationConfig;
-        private static bool _initialized;
-        private static bool _loggedConfigFailure;
-
-        internal static void Initialize()
-        {
-            if (_initialized)
+            List<string> constellationNames = LethalConstellationsCompat.GetKnownConstellationNames();
+            if (constellationNames.Count == 0)
                 return;
 
-            _initialized = true;
-            if (!LethalConstellationsCompat.IsInstalled)
-                return;
-
-            EnsureConfigReady();
-            RefreshSections();
-        }
-
-        internal static void RefreshSections()
-        {
-            if (!LethalConstellationsCompat.IsInstalled)
-                return;
-
-            if (!EnsureConfigReady())
-                return;
-
-            try
+            bool addedNewEntries = false;
+            foreach (string constellationName in constellationNames)
             {
-                List<string> constellationNames = LethalConstellationsCompat.GetKnownConstellationNames();
-                if (constellationNames.Count == 0)
-                    return;
+                if (constellationName.Length == 0)
+                    continue;
 
-                bool addedNewEntries = false;
-                foreach (string constellationName in constellationNames)
-                {
-                    if (constellationName.Length == 0)
-                        continue;
-
-                    if (EnsureConstellationEntry(constellationName))
-                        addedNewEntries = true;
-                }
-
-                if (addedNewEntries)
-                    _constellationConfig!.Save();
+                if (TryAddEntry(constellationName))
+                    addedNewEntries = true;
             }
-            catch (Exception e)
-            {
-                Plugin.Log.LogWarning($"Could not refresh constellation deadline sections: {e.Message}");
-            }
-        }
 
-        internal static bool TryGetCurrentConstellationSettings(
-            out string constellationName,
-            out ConstellationDeadlineMode mode,
-            out int fixedDays,
-            out int min,
-            out int max)
-        {
-            constellationName = string.Empty;
-            mode = ConstellationDeadlineMode.UseGlobal;
-            fixedDays = Math.Max(1, ConfigManager.DaysToDeadline.Value);
-            min = Math.Max(1, ConfigManager.DeadlineMin.Value);
-            max = Math.Max(min, ConfigManager.DeadlineMax.Value);
-
-            if (!LethalConstellationsCompat.IsInstalled)
-                return false;
-
-            if (!LethalConstellationsCompat.TryGetCurrentConstellationName(out constellationName))
-                return false;
-
-            if (!EnsureConfigReady())
-                return false;
-
-            if (!Entries.TryGetValue(constellationName, out ConstellationEntries? entry))
-            {
-                if (!EnsureConstellationEntry(constellationName))
-                    return false;
-
+            if (addedNewEntries)
                 _constellationConfig!.Save();
-                entry = Entries[constellationName];
-            }
+        }
+        catch (Exception e)
+        {
+            Plugin.Log.LogWarning($"Could not refresh constellation deadline sections: {e.Message}");
+        }
+    }
 
-            mode = ParseMode(entry.DeadlineMode.Value);
-            fixedDays = Math.Max(1, entry.FixedDays.Value);
-            min = Math.Max(1, entry.DeadlineMin.Value);
-            max = Math.Max(min, entry.DeadlineMax.Value);
+    internal static bool TryGetCurrentConstellationSettings(
+        out string constellationName,
+        out ConstellationDeadlineMode mode,
+        out int fixedDays,
+        out int min,
+        out int max)
+    {
+        constellationName = string.Empty;
+        mode = ConstellationDeadlineMode.UseGlobal;
+        fixedDays = Math.Max(1, ConfigManager.DaysToDeadline.Value);
+        min = Math.Max(1, ConfigManager.DeadlineMin.Value);
+        max = Math.Max(min, ConfigManager.DeadlineMax.Value);
+
+        if (!LethalConstellationsCompat.IsInstalled)
+            return false;
+
+        if (!LethalConstellationsCompat.TryGetCurrentConstellationName(out constellationName))
+            return false;
+
+        if (!LoadConfig())
+            return false;
+
+        if (!Entries.TryGetValue(constellationName, out ConstellationEntries? entry))
+        {
+            if (!TryAddEntry(constellationName))
+                return false;
+
+            _constellationConfig!.Save();
+            entry = Entries[constellationName];
+        }
+
+        mode = ParseMode(entry.DeadlineMode.Value);
+        fixedDays = Math.Max(1, entry.FixedDays.Value);
+        min = Math.Max(1, entry.DeadlineMin.Value);
+        max = Math.Max(min, entry.DeadlineMax.Value);
+        return true;
+    }
+
+    private static bool LoadConfig()
+    {
+        if (_constellationConfig != null)
+            return true;
+
+        try
+        {
+            string path = Path.Combine(Paths.ConfigPath, FileName);
+            _constellationConfig = new ConfigFile(path, true);
             return true;
         }
-
-        private static bool EnsureConfigReady()
+        catch (Exception e)
         {
-            if (_constellationConfig != null)
-                return true;
-
-            try
+            if (!_loggedConfigFailure)
             {
-                string path = Path.Combine(Paths.ConfigPath, FileName);
-                _constellationConfig = new ConfigFile(path, true);
-                return true;
+                _loggedConfigFailure = true;
+                Plugin.Log.LogWarning($"Could not initialize {FileName}: {e.Message}");
             }
-            catch (Exception e)
-            {
-                if (!_loggedConfigFailure)
-                {
-                    _loggedConfigFailure = true;
-                    Plugin.Log.LogWarning($"Could not initialize {FileName}: {e.Message}");
-                }
 
-                return false;
-            }
+            return false;
         }
+    }
 
-        private static bool EnsureConstellationEntry(string constellationName)
+    private static bool TryAddEntry(string constellationName)
+    {
+        try
         {
-            try
-            {
-                return AddConstellationEntry(constellationName);
-            }
-            catch (Exception e)
-            {
-                Plugin.Log.LogWarning($"Could not add deadline settings for constellation '{constellationName}': {e.Message}. It will use the global deadline.");
-                return false;
-            }
+            return AddConstellationEntry(constellationName);
         }
-
-        private static bool AddConstellationEntry(string constellationName)
+        catch (Exception e)
         {
-            if (_constellationConfig == null)
-                return false;
+            Plugin.Log.LogWarning($"Could not add deadline settings for constellation '{constellationName}': {e.Message}. It will use the global deadline.");
+            return false;
+        }
+    }
 
-            if (Entries.ContainsKey(constellationName))
-                return false;
+    private static bool AddConstellationEntry(string constellationName)
+    {
+        if (_constellationConfig == null)
+            return false;
 
-            string section = $"{SectionPrefix}{constellationName}";
-            int defaultFixed = Math.Max(1, ConfigManager.DaysToDeadline.Value);
-            int defaultMin = Math.Max(1, ConfigManager.DeadlineMin.Value);
-            int defaultMax = Math.Max(defaultMin, ConfigManager.DeadlineMax.Value);
+        if (Entries.ContainsKey(constellationName))
+            return false;
 
-            var entries = new ConstellationEntries
-            {
-                DeadlineMode = _constellationConfig.Bind(
-                    section,
-                    "DeadlineMode",
-                    ConstellationDeadlineMode.UseGlobal.ToString(),
-                    new ConfigDescription(
-                        "Deadline mode for this constellation. UseGlobal uses main ConfigurableQuota deadline settings, Fixed uses FixedDaysToDeadline, Random uses DeadlineMin/DeadlineMax.",
-                        new AcceptableValueList<string>(
-                            ConstellationDeadlineMode.UseGlobal.ToString(),
-                            ConstellationDeadlineMode.Fixed.ToString(),
-                            ConstellationDeadlineMode.Random.ToString()
-                        )
+        string section = $"{SectionPrefix}{constellationName}";
+        int defaultFixed = Math.Max(1, ConfigManager.DaysToDeadline.Value);
+        int defaultMin = Math.Max(1, ConfigManager.DeadlineMin.Value);
+        int defaultMax = Math.Max(defaultMin, ConfigManager.DeadlineMax.Value);
+
+        var entries = new ConstellationEntries
+        {
+            DeadlineMode = _constellationConfig.Bind(
+                section,
+                "DeadlineMode",
+                ConstellationDeadlineMode.UseGlobal.ToString(),
+                new ConfigDescription(
+                    "Deadline mode for this constellation. UseGlobal uses main ConfigurableQuota deadline settings, Fixed uses FixedDaysToDeadline, Random uses DeadlineMin/DeadlineMax.",
+                    new AcceptableValueList<string>(
+                        ConstellationDeadlineMode.UseGlobal.ToString(),
+                        ConstellationDeadlineMode.Fixed.ToString(),
+                        ConstellationDeadlineMode.Random.ToString()
                     )
-                ),
-                FixedDays = _constellationConfig.Bind(
-                    section,
-                    "FixedDaysToDeadline",
-                    defaultFixed,
-                    "Used when Deadline Mode is Fixed."
-                ),
-                DeadlineMin = _constellationConfig.Bind(
-                    section,
-                    "DeadlineMin",
-                    defaultMin,
-                    "Used when Deadline Mode is Random."
-                ),
-                DeadlineMax = _constellationConfig.Bind(
-                    section,
-                    "DeadlineMax",
-                    defaultMax,
-                    "Used when Deadline Mode is Random."
                 )
-            };
+            ),
+            FixedDays = _constellationConfig.Bind(
+                section,
+                "FixedDaysToDeadline",
+                defaultFixed,
+                "Used when Deadline Mode is Fixed."
+            ),
+            DeadlineMin = _constellationConfig.Bind(
+                section,
+                "DeadlineMin",
+                defaultMin,
+                "Used when Deadline Mode is Random."
+            ),
+            DeadlineMax = _constellationConfig.Bind(
+                section,
+                "DeadlineMax",
+                defaultMax,
+                "Used when Deadline Mode is Random."
+            )
+        };
 
-            Entries[constellationName] = entries;
-            Plugin.Log.LogInfo($"Added constellation deadline settings section for '{constellationName}'.");
-            return true;
-        }
+        Entries[constellationName] = entries;
+        Plugin.Log.LogInfo($"Added constellation deadline settings section for '{constellationName}'.");
+        return true;
+    }
 
-        private static ConstellationDeadlineMode ParseMode(string rawMode)
-        {
-            if (Enum.TryParse(rawMode, true, out ConstellationDeadlineMode parsedMode))
-                return parsedMode;
+    private static ConstellationDeadlineMode ParseMode(string rawMode)
+    {
+        if (Enum.TryParse(rawMode, true, out ConstellationDeadlineMode parsedMode))
+            return parsedMode;
 
-            return ConstellationDeadlineMode.UseGlobal;
-        }
+        return ConstellationDeadlineMode.UseGlobal;
     }
 }

@@ -1,661 +1,654 @@
 using System;
 using System.Linq;
-using HarmonyLib;
-using UnityEngine;
-using Unity.Netcode;
 using BepInEx.Bootstrap;
 using ConfigurableQuota.Compat;
+using HarmonyLib;
+using Unity.Netcode;
+using UnityEngine;
 
-namespace ConfigurableQuota.Patches
+namespace ConfigurableQuota.Patches;
+
+[HarmonyPatch(typeof(TimeOfDay))]
+internal static class TimeOfDayQuotaPatch
 {
-    [HarmonyPatch(typeof(TimeOfDay))]
-    internal static class TimeOfDayQuotaPatch
+    private static bool _initialDeadlineApplied;
+    private static bool _initialDeadlineWasConstellationSpecific;
+    private static bool _loggedPlayerCapAutofix;
+    private static int[]? _bonusThresholds;
+    private static string? _bonusThresholdsRaw;
+
+    internal static int LastAppliedRollover;
+
+    private readonly struct DeadlineSelection
     {
-        private static bool _initialDeadlineApplied;
-        private static bool _initialDeadlineWasConstellationSpecific;
-        private static bool _loggedPlayerCapAutofix;
-        private static int[]? _bonusThresholds;
-        private static string? _bonusThresholdsRaw;
-
-        internal static int LastAppliedRollover;
-
-        private readonly struct DeadlineSelection
+        internal DeadlineSelection(
+            int days,
+            bool isRandomized,
+            bool fromConstellation,
+            ConstellationDeadlineMode constellationMode,
+            string constellationName,
+            string source)
         {
-            internal DeadlineSelection(
-                int days,
-                bool isRandomized,
-                bool fromConstellation,
-                ConstellationDeadlineMode constellationMode,
-                string constellationName,
-                string source)
-            {
-                Days = days;
-                IsRandomized = isRandomized;
-                FromConstellation = fromConstellation;
-                ConstellationMode = constellationMode;
-                ConstellationName = constellationName;
-                Source = source;
-            }
-
-            internal int Days { get; }
-            internal bool IsRandomized { get; }
-            internal bool FromConstellation { get; }
-            internal ConstellationDeadlineMode ConstellationMode { get; }
-            internal string ConstellationName { get; }
-            internal string Source { get; }
+            Days = days;
+            IsRandomized = isRandomized;
+            FromConstellation = fromConstellation;
+            ConstellationMode = constellationMode;
+            ConstellationName = constellationName;
+            Source = source;
         }
 
-        [HarmonyPatch(nameof(TimeOfDay.SetNewProfitQuota))]
-        [HarmonyPrefix]
-        [HarmonyPriority(Priority.Low)]
-        [HarmonyAfter(new[] { ModGUIDs.LETHAL_MOON_UNLOCKS_GUID })]
-        private static bool SetNewProfitQuota_Prefix(TimeOfDay __instance,
-            ref int ___timesFulfilledQuota,
-            ref int ___profitQuota,
-            ref float ___timeUntilDeadline,
-            ref int ___quotaFulfilled,
-            ref int ___daysUntilDeadline,
-            ref float ___totalTime)
+        internal int Days { get; }
+        internal bool IsRandomized { get; }
+        internal bool FromConstellation { get; }
+        internal ConstellationDeadlineMode ConstellationMode { get; }
+        internal string ConstellationName { get; }
+        internal string Source { get; }
+    }
+
+    [HarmonyPatch(nameof(TimeOfDay.SetNewProfitQuota))]
+    [HarmonyPrefix]
+    [HarmonyPriority(Priority.Low)]
+    [HarmonyAfter(new[] { ModGUIDs.LethalMoonUnlocks })]
+    private static bool SetNewProfitQuota_Prefix(TimeOfDay __instance,
+        ref int ___timesFulfilledQuota,
+        ref int ___profitQuota,
+        ref float ___timeUntilDeadline,
+        ref int ___quotaFulfilled,
+        ref int ___daysUntilDeadline,
+        ref float ___totalTime)
+    {
+        bool advanceStarted = false;
+
+        try
         {
-            bool advanceStarted = false;
+            if (!__instance.IsServer) return false;
 
-            try
+            if (ConfigManager.DisableQuota.Value)
             {
-                if (!__instance.IsServer) return false;
-
-                if (ConfigManager.DisableQuota.Value)
-                {
-                    advanceStarted = true;
-                    ___profitQuota = Mathf.Max(0, ConfigManager.StartingQuota.Value);
-                    SetDeadlineTimer(___totalTime, ref ___daysUntilDeadline, ref ___timeUntilDeadline, quota: ___profitQuota);
-                    return false;
-                }
-
-                if (ConfigManager.RolloverAmount.Value > 0f
-                    && DepositItemsDeskPatches.SoldThisQuota <= 0
-                    && ___quotaFulfilled <= LastAppliedRollover
-                    && ___timeUntilDeadline > 0f)
-                {
-                    Plugin.Log.LogInfo(
-                        $"Quota {___profitQuota} already covered by rollover and nothing was sold, holding it until sale or deadline.");
-                    return false;
-                }
-
-                int previousQuota = ___profitQuota;
-                int previousRollover = LastAppliedRollover;
-                int previousDeadline = __instance.quotaVariables != null ? __instance.quotaVariables.deadlineDaysAmount : -1;
                 advanceStarted = true;
-                ___timesFulfilledQuota++;
-                __instance.CalculateLuckValue();
-
-                int newQuota = CalculateNewQuota(previousQuota, ___timesFulfilledQuota);
-
-                int daysLeftAtFulfill = Math.Max(0, ___daysUntilDeadline);
-                int overage = ___quotaFulfilled - previousQuota;
-
-                ___profitQuota = newQuota;
-                int appliedRollover = CalculateRollover(overage);
-
-                int overtimeBase = ConfigManager.OvertimeExcludesRollover.Value
-                    ? Math.Max(DepositItemsDeskPatches.SoldThisQuota - previousQuota, 0)
-                    : overage;
-                int overtimeBonus = (overtimeBase / 5) + (15 * daysLeftAtFulfill);
-
-                DepositItemsDeskPatches.SoldThisQuota = 0;
-
-                int deadline = SetDeadlineTimer(
-                    ___totalTime,
-                    ref ___daysUntilDeadline,
-                    ref ___timeUntilDeadline,
-                    prevDays: previousDeadline,
-                    logSelection: true,
-                    quota: ___profitQuota
-                );
-
-                if (__instance.quotaVariables != null)
-                    __instance.quotaVariables.deadlineDaysAmount = deadline;
-
-                RefreshLuckyFurniture(__instance);
-                __instance.hasShownAdThisQuota = false;
-
-                __instance.SyncNewProfitQuotaClientRpc(___profitQuota, overtimeBonus, ___timesFulfilledQuota);
-
-                ___quotaFulfilled = appliedRollover;
-                LastAppliedRollover = appliedRollover;
-                ___daysUntilDeadline = deadline;
-                ___timeUntilDeadline = ___totalTime * deadline;
-
-                NetworkSync.SyncDeadlineToClients(deadline);
-                NetworkSync.SyncRolloverToClients(appliedRollover);
-
-                Plugin.Log.LogInfo(
-                    $"Quota {___timesFulfilledQuota}: {previousQuota} -> {newQuota}, deadline {deadline} days, rollover {appliedRollover}, overtime {overtimeBonus} credits.");
-
-                if (ConfigManager.RolloverAmount.Value > 0f && previousRollover >= previousQuota && appliedRollover < newQuota)
-                {
-                    Plugin.Log.LogInfo($"Rollover no longer covers the quota, {newQuota - appliedRollover} has to be sold within {deadline} days.");
-                    NetworkSync.ReportRolloverStatus(appliedRollover, newQuota, deadline);
-                }
-
+                ___profitQuota = Mathf.Max(0, ConfigManager.StartingQuota.Value);
+                SetDeadlineTimer(___totalTime, ref ___daysUntilDeadline, ref ___timeUntilDeadline, quota: ___profitQuota);
                 return false;
             }
-            catch (Exception e)
-            {
-                Plugin.Log.LogError(advanceStarted
-                    ? $"Could not calculate the next quota: {e.Message}. It was already partly advanced, so it is left as it is."
-                    : $"Could not calculate the next quota: {e.Message}");
 
-                return !advanceStarted;
+            if (ConfigManager.RolloverAmount.Value > 0f
+                && DepositItemsDeskPatches.SoldThisQuota <= 0
+                && ___quotaFulfilled <= LastAppliedRollover
+                && ___timeUntilDeadline > 0f)
+            {
+                Plugin.Log.LogInfo(
+                    $"Quota {___profitQuota} already covered by rollover and nothing was sold, holding it until sale or deadline.");
+                return false;
             }
+
+            int previousQuota = ___profitQuota;
+            int previousRollover = LastAppliedRollover;
+            int previousDeadline = __instance.quotaVariables != null ? __instance.quotaVariables.deadlineDaysAmount : -1;
+            advanceStarted = true;
+            ___timesFulfilledQuota++;
+            __instance.CalculateLuckValue();
+
+            int newQuota = GetNewQuota(previousQuota, ___timesFulfilledQuota);
+
+            int daysLeftAtFulfill = Math.Max(0, ___daysUntilDeadline);
+            int overage = ___quotaFulfilled - previousQuota;
+
+            ___profitQuota = newQuota;
+            int appliedRollover = GetRollover(overage);
+
+            int overtimeBase = ConfigManager.OvertimeExcludesRollover.Value
+                ? Math.Max(DepositItemsDeskPatches.SoldThisQuota - previousQuota, 0)
+                : overage;
+            int overtimeBonus = (overtimeBase / 5) + (15 * daysLeftAtFulfill);
+
+            DepositItemsDeskPatches.SoldThisQuota = 0;
+
+            int deadline = SetDeadlineTimer(
+                ___totalTime,
+                ref ___daysUntilDeadline,
+                ref ___timeUntilDeadline,
+                prevDays: previousDeadline,
+                logSelection: true,
+                quota: ___profitQuota
+            );
+
+            if (__instance.quotaVariables != null)
+                __instance.quotaVariables.deadlineDaysAmount = deadline;
+
+            RefreshLuckyFurniture(__instance);
+            __instance.hasShownAdThisQuota = false;
+
+            __instance.SyncNewProfitQuotaClientRpc(___profitQuota, overtimeBonus, ___timesFulfilledQuota);
+
+            ___quotaFulfilled = appliedRollover;
+            LastAppliedRollover = appliedRollover;
+            ___daysUntilDeadline = deadline;
+            ___timeUntilDeadline = ___totalTime * deadline;
+            __instance.SetBuyingRateForDay();
+
+            NetworkSync.SyncDeadlineToClients(deadline);
+            NetworkSync.SyncRolloverToClients(appliedRollover);
+
+            Plugin.Log.LogInfo(
+                $"Quota {___timesFulfilledQuota} raised from {previousQuota} to {newQuota}, deadline {deadline} days, rollover {appliedRollover}, overtime {overtimeBonus} credits.");
+
+            if (ConfigManager.RolloverAmount.Value > 0f && previousRollover >= previousQuota && appliedRollover < newQuota)
+            {
+                Plugin.Log.LogInfo($"Rollover no longer covers the quota, {newQuota - appliedRollover} has to be sold within {deadline} days.");
+                NetworkSync.ReportRolloverStatus(appliedRollover, newQuota, deadline);
+            }
+
+            return false;
         }
-
-        private static int CalculateNewQuota(int previousQuota, int timesFulfilled)
+        catch (Exception e)
         {
-            int newQuota;
-            int finalLevel = ConfigManager.FinalLevel.Value;
+            Plugin.Log.LogError(advanceStarted
+                ? $"Could not calculate the next quota: {e.Message}. It was already partly advanced, so it is left as it is."
+                : $"Could not calculate the next quota: {e.Message}");
 
-            if (finalLevel != -1 && previousQuota >= finalLevel)
+            return !advanceStarted;
+        }
+    }
+
+    private static int GetNewQuota(int previousQuota, int timesFulfilled)
+    {
+        int newQuota;
+        int finalLevel = ConfigManager.FinalLevel.Value;
+
+        if (finalLevel != -1 && previousQuota >= finalLevel)
+        {
+            newQuota = Mathf.RoundToInt(Mathf.Clamp((float)previousQuota + Math.Max(0, ConfigManager.FinalIncrease.Value), 0f, 1E+09f));
+        }
+        else
+        {
+            float sharp = Mathf.Max(0.1f, ConfigManager.CurveSharpness.Value);
+            float t = timesFulfilled;
+            float timeMult = Mathf.Clamp(1f + (t * (t / sharp)), 0f, 10000f);
+
+            float randFactor = 1f;
+            float randMult = ConfigManager.RandomizerMultiplier.Value;
+            if (randMult > 0f)
             {
-                newQuota = Mathf.RoundToInt(Mathf.Clamp((float)previousQuota + Math.Max(0, ConfigManager.FinalIncrease.Value), 0f, 1E+09f));
+                randFactor = 1f + (UnityEngine.Random.Range(-0.5f, 0.5f) * randMult);
             }
-            else
-            {
-                float sharp = Mathf.Max(0.1f, ConfigManager.CurveSharpness.Value);
-                float t = timesFulfilled;
-                float timeMult = Mathf.Clamp(1f + (t * (t / sharp)), 0f, 10000f);
 
-                float randFactor = 1f;
-                float randMult = ConfigManager.RandomizerMultiplier.Value;
-                if (randMult > 0f)
+            float increase = ConfigManager.BaseIncrease.Value * timeMult * randFactor;
+
+            if (ConfigManager.EnablePlayerMultiplier.Value)
+            {
+                increase *= GetPlayerMultiplier();
+            }
+
+            if (ConfigManager.EnableGrowthDampening.Value)
+            {
+                int ceiling = ConfigManager.DampeningStartAt.Value;
+                if (timesFulfilled > ceiling)
                 {
-                    randFactor = 1f + (UnityEngine.Random.Range(-0.5f, 0.5f) * randMult);
+                    float excess = timesFulfilled - ceiling;
+                    float scale = Mathf.Max(0.1f, ConfigManager.DampeningSharpness.Value);
+                    increase /= 1f + Mathf.Pow(excess / scale, 2f);
                 }
-
-                float increase = ConfigManager.BaseIncrease.Value * timeMult * randFactor;
-
-                if (ConfigManager.EnablePlayerMultiplier.Value)
-                {
-                    increase *= CalculatePlayerMultiplier();
-                }
-
-                if (ConfigManager.EnableGrowthDampening.Value)
-                {
-                    int ceiling = ConfigManager.DampeningStartAt.Value;
-                    if (timesFulfilled > ceiling)
-                    {
-                        float excess = timesFulfilled - ceiling;
-                        float scale = Mathf.Max(0.1f, ConfigManager.DampeningSharpness.Value);
-                        increase /= 1f + Mathf.Pow(excess / scale, 2f);
-                    }
-                }
-
-                newQuota = Mathf.RoundToInt(Mathf.Clamp(previousQuota + increase, 0f, 1E+09f));
             }
 
-            int cap = ConfigManager.QuotaCap.Value;
-            return cap > 0 ? Mathf.Min(newQuota, cap) : newQuota;
+            newQuota = Mathf.RoundToInt(Mathf.Clamp(previousQuota + increase, 0f, 1E+09f));
         }
 
-        private static float CalculatePlayerMultiplier()
+        int cap = ConfigManager.QuotaCap.Value;
+        return cap > 0 ? Mathf.Min(newQuota, cap) : newQuota;
+    }
+
+    private static float GetPlayerMultiplier()
+    {
+        var netManager = NetworkManager.Singleton;
+        if (!netManager.IsServer) return 1f;
+
+        int playerCount = Mathf.Max(1, netManager.ConnectedClientsList.Count);
+        int threshold = Mathf.Max(0, ConfigManager.PlayerThreshold.Value);
+        int extraPlayers = playerCount - threshold;
+
+        if (extraPlayers <= 0) return 1f;
+
+        int cap = ConfigManager.PlayerCap.Value;
+        if (cap <= threshold)
         {
-            var netManager = NetworkManager.Singleton;
-            if (netManager == null || !netManager.IsServer) return 1f;
+            cap = threshold + 1;
 
-            int playerCount = Mathf.Max(1, netManager.ConnectedClientsList?.Count ?? 1);
-            int threshold = Mathf.Max(0, ConfigManager.PlayerThreshold.Value);
-            int extraPlayers = playerCount - threshold;
-
-            if (extraPlayers <= 0) return 1f;
-
-            int cap = ConfigManager.PlayerCap.Value;
-            if (cap <= threshold)
+            if (!_loggedPlayerCapAutofix)
             {
-                cap = threshold + 1;
-
-                if (!_loggedPlayerCapAutofix)
-                {
-                    _loggedPlayerCapAutofix = true;
-                    Plugin.Log.LogWarning(
-                        $"Player scaling config is invalid, PlayerCap is not above PlayerThreshold. Using {cap} for this session.");
-                }
-            }
-
-            int maxExtra = Mathf.Max(0, cap - threshold);
-            extraPlayers = Mathf.Clamp(extraPlayers, 0, maxExtra);
-
-            return 1f + (extraPlayers * Mathf.Max(0f, ConfigManager.MultPerPlayer.Value));
-        }
-
-        private static void RefreshLuckyFurniture(TimeOfDay instance)
-        {
-            var unlockables = StartOfRound.Instance != null ? StartOfRound.Instance.unlockablesList : null;
-            if (instance.furniturePlacedAtQuotaStart == null || unlockables == null) return;
-
-            instance.furniturePlacedAtQuotaStart.Clear();
-
-            foreach (var parented in UnityEngine.Object.FindObjectsByType<AutoParentToShip>(FindObjectsSortMode.None))
-            {
-                int id = parented.unlockableID;
-                if (id < 0 || id >= unlockables.unlockables.Count) continue;
-                if (unlockables.unlockables[id].spawnPrefab)
-                    instance.furniturePlacedAtQuotaStart.Add(id);
+                _loggedPlayerCapAutofix = true;
+                Plugin.Log.LogWarning(
+                    $"Player scaling config is invalid, PlayerCap is not above PlayerThreshold. Using {cap} for this session.");
             }
         }
 
-        private static int CalculateRollover(int overage)
+        int maxExtra = Mathf.Max(0, cap - threshold);
+        extraPlayers = Mathf.Clamp(extraPlayers, 0, maxExtra);
+
+        return 1f + (extraPlayers * Mathf.Max(0f, ConfigManager.MultPerPlayer.Value));
+    }
+
+    private static void RefreshLuckyFurniture(TimeOfDay instance)
+    {
+        var unlockables = StartOfRound.Instance.unlockablesList;
+        if (instance.furniturePlacedAtQuotaStart == null) return;
+
+        instance.furniturePlacedAtQuotaStart.Clear();
+
+        foreach (var parented in UnityEngine.Object.FindObjectsByType<AutoParentToShip>(FindObjectsSortMode.None))
         {
-            float rolloverAmt = ConfigManager.RolloverAmount.Value;
-            if (rolloverAmt <= 0f || overage <= 0) return 0;
-            return Mathf.RoundToInt(overage * Mathf.Clamp01(rolloverAmt));
+            int id = parented.unlockableID;
+            if (id < 0 || id >= unlockables.unlockables.Count) continue;
+            if (unlockables.unlockables[id].spawnPrefab)
+                instance.furniturePlacedAtQuotaStart.Add(id);
         }
+    }
 
-        private static int SetDeadlineTimer(float dayDuration, ref int days, ref float timeUntilDeadline, int prevDays = -1, bool logSelection = false, int quota = 0)
+    private static int GetRollover(int overage)
+    {
+        float rolloverAmt = ConfigManager.RolloverAmount.Value;
+        if (rolloverAmt <= 0f || overage <= 0) return 0;
+        return Mathf.RoundToInt(overage * Mathf.Clamp01(rolloverAmt));
+    }
+
+    private static int SetDeadlineTimer(float dayDuration, ref int days, ref float timeUntilDeadline, int prevDays = -1, bool logSelection = false, int quota = 0)
+    {
+        int bonus = GetDeadlineBonus(quota);
+        DeadlineSelection selection = GetDeadlineSelection(prevDays >= 0 ? prevDays - bonus : prevDays);
+        int d = selection.Days + bonus;
+        days = d;
+        timeUntilDeadline = d * dayDuration;
+
+        if (logSelection)
+            Plugin.Log.LogInfo($"Deadline selected ({selection.Source}{DescribeDeadlineBonus(bonus)}): {d} days.");
+
+        return d;
+    }
+
+    [HarmonyPatch(nameof(TimeOfDay.Awake))]
+    [HarmonyPostfix]
+    private static void TimeOfDay_Awake_Postfix(TimeOfDay __instance)
+    {
+        ApplyQuotaVariables(__instance);
+    }
+
+    [HarmonyPatch(nameof(TimeOfDay.Start))]
+    [HarmonyPostfix]
+    private static void TimeOfDay_Start_Postfix(TimeOfDay __instance)
+    {
+        ConstellationDeadlineConfig.RefreshSections();
+
+        if (__instance.timesFulfilledQuota == 0)
         {
-            int bonus = ResolveDeadlineBonus(quota);
-            DeadlineSelection selection = ResolveDeadlineSelection(prevDays >= 0 ? prevDays - bonus : prevDays);
-            int d = selection.Days + bonus;
-            days = d;
-            timeUntilDeadline = d * dayDuration;
-
-            if (logSelection)
-                Plugin.Log.LogInfo($"Deadline selected ({selection.Source}{DescribeDeadlineBonus(bonus)}): {d} days.");
-
-            return d;
-        }
-
-        [HarmonyPatch(nameof(TimeOfDay.Awake))]
-        [HarmonyPostfix]
-        private static void TimeOfDay_Awake_Postfix(TimeOfDay __instance)
-        {
-            ApplyQuotaVariables(__instance);
-        }
-
-        [HarmonyPatch(nameof(TimeOfDay.Start))]
-        [HarmonyPostfix]
-        private static void TimeOfDay_Start_Postfix(TimeOfDay __instance)
-        {
-            ConstellationDeadlineConfig.RefreshSections();
-
             if (__instance.IsServer)
-                LateJoinSync.EnsureSubscribed();
-
-            if (__instance.timesFulfilledQuota == 0)
             {
                 TryApplyInitialDeadlineFromCurrentMode(__instance, allowConstellationOverride: true, logSelection: true);
-
-                if (__instance.IsServer)
-                {
-                    NetworkSync.SyncDeadlineToClients(__instance.daysUntilDeadline);
-                    Plugin.Log.LogInfo($"Initial deadline synced: {__instance.daysUntilDeadline} days.");
-                }
-
-                string deadlineDesc = DescribeCurrentDeadlineMode(__instance.daysUntilDeadline);
-                string quotaCap = ConfigManager.QuotaCap.Value != -1 ? $", cap={ConfigManager.QuotaCap.Value}" : "";
-                string finalLevel = ConfigManager.FinalLevel.Value != -1
-                    ? $", finalLevel={ConfigManager.FinalLevel.Value} (+{ConfigManager.FinalIncrease.Value} flat)"
-                    : "";
-                string creditPenalty = ConfigManager.CreditPenaltiesEnabled.Value
-                    ? $"credits={ConfigManager.CreditPenaltyPercentPerPlayer.Value:P0}/player (cap {ConfigManager.CreditPenaltyPercentCap.Value:P0})"
-                    : "credits=off";
-                string quotaPenalty = ConfigManager.QuotaPenaltiesEnabled.Value
-                    ? $"quota={ConfigManager.QuotaPenaltyPercentPerPlayer.Value:P0}/player (cap {ConfigManager.QuotaPenaltyPercentCap.Value:P0})"
-                    : "quota=off";
-                string rollover = ConfigManager.RolloverAmount.Value > 0f
-                    ? $"rollover={ConfigManager.RolloverAmount.Value:P0}"
-                        + (ConfigManager.RolloverWipePenalty.Value > 0f ? $" (wipe -{ConfigManager.RolloverWipePenalty.Value:P0})" : "")
-                        + (ConfigManager.OvertimeExcludesRollover.Value ? ", overtime excludes it" : "")
-                    : "rollover=off";
-                string losses =
-                    $"scrap={ConfigManager.ScrapLossEnabled.Value}" +
-                    $", value={ConfigManager.ValueLossEnabled.Value}({ConfigManager.ValueLossPercent.Value:P0})" +
-                    $", equip={ConfigManager.EquipmentLossEnabled.Value}";
-
-                Plugin.Log.LogInfo(
-                    $"Settings loaded: quota start {ConfigManager.StartingQuota.Value}, base +{ConfigManager.BaseIncrease.Value}/cycle, sharpness {ConfigManager.CurveSharpness.Value}{quotaCap}{finalLevel}; deadline {deadlineDesc}; credits start {ConfigManager.StartingCredits.Value}; {rollover}; penalties [{creditPenalty}, {quotaPenalty}]; losses [{losses}].");
+                NetworkSync.SyncDeadlineToClients(__instance.daysUntilDeadline);
+                Plugin.Log.LogInfo($"Initial deadline synced: {__instance.daysUntilDeadline} days.");
             }
 
-            if (Chainloader.PluginInfos.ContainsKey("ShaosilGaming.GeneralImprovements"))
-                __instance.StartCoroutine(GIMonitorRefreshRoutine());
+            string deadlineDesc = DescribeCurrentDeadlineMode(__instance.daysUntilDeadline);
+            string quotaCap = ConfigManager.QuotaCap.Value != -1 ? $", capped at {ConfigManager.QuotaCap.Value}" : "";
+            string finalLevel = ConfigManager.FinalLevel.Value != -1
+                ? $", flat +{ConfigManager.FinalIncrease.Value} after {ConfigManager.FinalLevel.Value}"
+                : "";
+            string creditPenalty = ConfigManager.CreditPenaltiesEnabled.Value
+                ? $"Credit penalty {ConfigManager.CreditPenaltyPercentPerPlayer.Value:P0} per death up to {ConfigManager.CreditPenaltyPercentCap.Value:P0}."
+                : "Credit penalty off.";
+            string quotaPenalty = ConfigManager.QuotaPenaltiesEnabled.Value
+                ? $"Quota penalty {ConfigManager.QuotaPenaltyPercentPerPlayer.Value:P0} per death up to {ConfigManager.QuotaPenaltyPercentCap.Value:P0}."
+                : "Quota penalty off.";
+            string rollover = ConfigManager.RolloverAmount.Value > 0f
+                ? $"Rollover keeps {ConfigManager.RolloverAmount.Value:P0}"
+                    + (ConfigManager.RolloverWipePenalty.Value > 0f ? $", a wipe cuts {ConfigManager.RolloverWipePenalty.Value:P0}" : "")
+                    + (ConfigManager.OvertimeExcludesRollover.Value ? ", overtime excludes it" : "")
+                    + "."
+                : "Rollover off.";
+            string losses =
+                $"Wipe losses: scrap {(ConfigManager.ScrapLossEnabled.Value ? "on" : "off")}" +
+                $", value {(ConfigManager.ValueLossEnabled.Value ? $"{ConfigManager.ValueLossPercent.Value:P0}" : "off")}" +
+                $", equipment {(ConfigManager.EquipmentLossEnabled.Value ? "on" : "off")}.";
+
+            Plugin.Log.LogInfo(
+                $"Quota starts at {ConfigManager.StartingQuota.Value} and grows by {ConfigManager.BaseIncrease.Value} with sharpness {ConfigManager.CurveSharpness.Value}{quotaCap}{finalLevel}. Deadline {deadlineDesc}. Credits start at {ConfigManager.StartingCredits.Value}. {rollover} {creditPenalty} {quotaPenalty} {losses}");
         }
 
-        private static System.Collections.IEnumerator GIMonitorRefreshRoutine()
+        if (Chainloader.PluginInfos.ContainsKey("ShaosilGaming.GeneralImprovements"))
+            __instance.StartCoroutine(GIMonitorRefreshRoutine());
+    }
+
+    private static System.Collections.IEnumerator GIMonitorRefreshRoutine()
+    {
+        yield return null;
+        RefreshExternalMonitors();
+    }
+
+    internal static void RefreshExternalMonitors()
+    {
+        try
         {
-            yield return null;
-            RefreshExternalMonitors();
+            var asm = AppDomain.CurrentDomain.GetAssemblies()
+                .FirstOrDefault(a => a.GetName().Name == "GeneralImprovements");
+            if (asm == null) return;
+
+            var helper = asm.GetType("GeneralImprovements.Utilities.MonitorsHelper");
+            helper?.GetMethod("UpdateTotalDaysMonitors")?.Invoke(null, null);
+            helper?.GetMethod("UpdateTotalQuotasMonitors")?.Invoke(null, null);
         }
-
-        internal static void RefreshExternalMonitors()
+        catch
         {
-            try
-            {
-                var asm = AppDomain.CurrentDomain.GetAssemblies()
-                    .FirstOrDefault(a => a.GetName().Name == "GeneralImprovements");
-                if (asm == null) return;
-
-                var helper = asm.GetType("GeneralImprovements.Utilities.MonitorsHelper");
-                helper?.GetMethod("UpdateTotalDaysMonitors")?.Invoke(null, null);
-                helper?.GetMethod("UpdateTotalQuotasMonitors")?.Invoke(null, null);
-            }
-            catch
-            {
-                // cool
-            }
         }
+    }
 
-        private static void ApplyQuotaVariables(TimeOfDay instance)
+    private static void ApplyQuotaVariables(TimeOfDay instance)
+    {
+        try
         {
-            try
-            {
-                if (instance.quotaVariables != null)
-                {
-                    instance.quotaVariables.startingQuota = ConfigManager.StartingQuota.Value;
-                    instance.quotaVariables.startingCredits = ConfigManager.StartingCredits.Value;
-                }
-
-                ResetInitialDeadlineTracking();
-                TryApplyInitialDeadlineFromCurrentMode(instance, allowConstellationOverride: false, logSelection: true);
-            }
-            catch (Exception e)
-            {
-                Plugin.Log.LogError($"Could not apply quota settings at startup: {e.Message}");
-            }
-        }
-
-        internal static bool TryApplyInitialDeadlineFromCurrentMode(
-            TimeOfDay instance,
-            bool allowConstellationOverride,
-            bool logSelection)
-        {
-            if (instance == null || instance.timesFulfilledQuota != 0)
-                return false;
-
-            DeadlineSelection selection = ResolveDeadlineSelection(prevDays: -1);
-
-            bool shouldApply = !_initialDeadlineApplied;
-            if (!shouldApply && allowConstellationOverride)
-            {
-                bool nowConstellationSpecific = selection.FromConstellation
-                    && selection.ConstellationMode != ConstellationDeadlineMode.UseGlobal;
-                shouldApply = !_initialDeadlineWasConstellationSpecific && nowConstellationSpecific;
-            }
-
-            if (!shouldApply)
-                return false;
-
-            int bonus = ResolveDeadlineBonus(ConfigManager.StartingQuota.Value);
-            int deadlineDays = selection.Days + bonus;
-
             if (instance.quotaVariables != null)
-                instance.quotaVariables.deadlineDaysAmount = deadlineDays;
+            {
+                instance.quotaVariables.startingQuota = ConfigManager.StartingQuota.Value;
+                instance.quotaVariables.startingCredits = ConfigManager.StartingCredits.Value;
+            }
 
-            instance.daysUntilDeadline = deadlineDays;
-            if (instance.totalTime > 0f)
-                instance.timeUntilDeadline = instance.totalTime * deadlineDays;
+            ResetInitialDeadlineTracking();
+            TryApplyInitialDeadlineFromCurrentMode(instance, allowConstellationOverride: false, logSelection: true);
+        }
+        catch (Exception e)
+        {
+            Plugin.Log.LogError($"Could not apply quota settings at startup: {e.Message}");
+        }
+    }
 
-            _initialDeadlineApplied = true;
-            _initialDeadlineWasConstellationSpecific = selection.FromConstellation
+    internal static bool TryApplyInitialDeadlineFromCurrentMode(
+        TimeOfDay instance,
+        bool allowConstellationOverride,
+        bool logSelection)
+    {
+        if (instance == null || instance.timesFulfilledQuota != 0)
+            return false;
+
+        DeadlineSelection selection = GetDeadlineSelection(prevDays: -1);
+
+        bool shouldApply = !_initialDeadlineApplied;
+        if (!shouldApply && allowConstellationOverride)
+        {
+            bool nowConstellationSpecific = selection.FromConstellation
                 && selection.ConstellationMode != ConstellationDeadlineMode.UseGlobal;
-
-            if (logSelection)
-                Plugin.Log.LogInfo($"Initial deadline selected ({selection.Source}{DescribeDeadlineBonus(bonus)}): {deadlineDays} days.");
-
-            return true;
+            shouldApply = !_initialDeadlineWasConstellationSpecific && nowConstellationSpecific;
         }
 
-        private static int[] GetDeadlineBonusThresholds()
-        {
-            string raw = ConfigManager.DeadlineBonusThresholds.Value ?? string.Empty;
+        if (!shouldApply)
+            return false;
 
-            if (_bonusThresholds != null && _bonusThresholdsRaw == raw)
-                return _bonusThresholds;
+        int bonus = GetDeadlineBonus(ConfigManager.StartingQuota.Value);
+        int deadlineDays = selection.Days + bonus;
 
-            _bonusThresholdsRaw = raw;
+        if (instance.quotaVariables != null)
+            instance.quotaVariables.deadlineDaysAmount = deadlineDays;
 
-            string[] parts = raw.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
-            string[] invalid = parts
-                .Where(part => !(int.TryParse(part.Trim(), out int parsed) && parsed > 0))
-                .Select(part => part.Trim())
-                .ToArray();
+        instance.daysUntilDeadline = deadlineDays;
+        if (instance.totalTime > 0f)
+            instance.timeUntilDeadline = instance.totalTime * deadlineDays;
 
-            if (invalid.Length > 0)
-                Plugin.Log.LogWarning($"Ignoring invalid deadline bonus thresholds: {string.Join(", ", invalid)}.");
+        _initialDeadlineApplied = true;
+        _initialDeadlineWasConstellationSpecific = selection.FromConstellation
+            && selection.ConstellationMode != ConstellationDeadlineMode.UseGlobal;
 
-            _bonusThresholds = parts
-                .Select(part => int.TryParse(part.Trim(), out int parsed) ? parsed : 0)
-                .Where(parsed => parsed > 0)
-                .Distinct()
-                .OrderBy(parsed => parsed)
-                .ToArray();
+        if (logSelection)
+            Plugin.Log.LogInfo($"Initial deadline selected ({selection.Source}{DescribeDeadlineBonus(bonus)}): {deadlineDays} days.");
 
-            int bonusCap = Math.Max(0, ConfigManager.DeadlineBonusMax.Value);
-            if (bonusCap > 0 && _bonusThresholds.Length > bonusCap)
-                Plugin.Log.LogWarning($"Deadline bonus has {_bonusThresholds.Length} thresholds but bonus is capped at {bonusCap} days, so highest {_bonusThresholds.Length - bonusCap} will never apply.");
+        return true;
+    }
 
+    private static int[] GetDeadlineBonusThresholds()
+    {
+        string raw = ConfigManager.DeadlineBonusThresholds.Value ?? string.Empty;
+
+        if (_bonusThresholds != null && _bonusThresholdsRaw == raw)
             return _bonusThresholds;
-        }
 
-        private static int ResolveDeadlineBonus(int quota)
+        _bonusThresholdsRaw = raw;
+
+        string[] parts = raw.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
+        string[] invalid = parts
+            .Where(part => !(int.TryParse(part.Trim(), out int parsed) && parsed > 0))
+            .Select(part => part.Trim())
+            .ToArray();
+
+        if (invalid.Length > 0)
+            Plugin.Log.LogWarning($"Ignoring invalid deadline bonus thresholds: {string.Join(", ", invalid)}.");
+
+        _bonusThresholds = parts
+            .Select(part => int.TryParse(part.Trim(), out int parsed) ? parsed : 0)
+            .Where(parsed => parsed > 0)
+            .Distinct()
+            .OrderBy(parsed => parsed)
+            .ToArray();
+
+        int bonusCap = Math.Max(0, ConfigManager.DeadlineBonusMax.Value);
+        if (bonusCap > 0 && _bonusThresholds.Length > bonusCap)
+            Plugin.Log.LogWarning($"Deadline bonus has {_bonusThresholds.Length} thresholds but bonus is capped at {bonusCap} days, so highest {_bonusThresholds.Length - bonusCap} will never apply.");
+
+        return _bonusThresholds;
+    }
+
+    private static int GetDeadlineBonus(int quota)
+    {
+        if (!ConfigManager.EnableDeadlineBonus.Value) return 0;
+        if (quota <= 0) return 0;
+
+        int[] thresholds = GetDeadlineBonusThresholds();
+        int bonus;
+
+        if (thresholds.Length > 0)
         {
-            if (!ConfigManager.EnableDeadlineBonus.Value) return 0;
-            if (quota <= 0) return 0;
-
-            int[] thresholds = GetDeadlineBonusThresholds();
-            int bonus;
-
-            if (thresholds.Length > 0)
+            bonus = 0;
+            foreach (int threshold in thresholds)
             {
-                bonus = 0;
-                foreach (int threshold in thresholds)
-                {
-                    if (quota < threshold) break;
-                    bonus++;
-                }
+                if (quota < threshold) break;
+                bonus++;
             }
-            else
-            {
-                int interval = ConfigManager.DeadlineBonusPerQuota.Value;
-                if (interval <= 0) return 0;
+        }
+        else
+        {
+            int interval = ConfigManager.DeadlineBonusPerQuota.Value;
+            if (interval <= 0) return 0;
 
-                bonus = quota / interval;
-            }
-
-            int max = Math.Max(0, ConfigManager.DeadlineBonusMax.Value);
-            return max > 0 ? Math.Min(bonus, max) : bonus;
+            bonus = quota / interval;
         }
 
-        private static string DescribeDeadlineBonus(int bonus)
-        {
-            return bonus > 0 ? $" +{bonus} quota bonus" : string.Empty;
-        }
+        int max = Math.Max(0, ConfigManager.DeadlineBonusMax.Value);
+        return max > 0 ? Math.Min(bonus, max) : bonus;
+    }
 
-        private static DeadlineSelection ResolveDeadlineSelection(int prevDays)
+    private static string DescribeDeadlineBonus(int bonus)
+    {
+        return bonus > 0 ? $" +{bonus} quota bonus" : string.Empty;
+    }
+
+    private static DeadlineSelection GetDeadlineSelection(int prevDays)
+    {
+        if (ConstellationDeadlineConfig.TryGetCurrentConstellationSettings(
+            out string constellationName,
+            out ConstellationDeadlineMode mode,
+            out int fixedDays,
+            out int min,
+            out int max))
         {
-            if (ConstellationDeadlineConfig.TryGetCurrentConstellationSettings(
-                out string constellationName,
-                out ConstellationDeadlineMode mode,
-                out int fixedDays,
-                out int min,
-                out int max))
+            if (mode == ConstellationDeadlineMode.Fixed)
             {
-                if (mode == ConstellationDeadlineMode.Fixed)
-                {
-                    int d = Math.Max(1, fixedDays);
-                    return new DeadlineSelection(
-                        d,
-                        isRandomized: false,
-                        fromConstellation: true,
-                        mode,
-                        constellationName,
-                        $"constellation '{constellationName}' fixed"
-                    );
-                }
-
-                if (mode == ConstellationDeadlineMode.Random)
-                {
-                    int d = RollRandomDeadline(min, max, prevDays, out int cMin, out int cMax);
-                    return new DeadlineSelection(
-                        d,
-                        isRandomized: true,
-                        fromConstellation: true,
-                        mode,
-                        constellationName,
-                        $"constellation '{constellationName}' random {cMin}-{cMax}"
-                    );
-                }
-
-                DeadlineSelection globalSelection = ResolveGlobalDeadlineSelection(prevDays);
+                int d = Math.Max(1, fixedDays);
                 return new DeadlineSelection(
-                    globalSelection.Days,
-                    globalSelection.IsRandomized,
+                    d,
+                    isRandomized: false,
                     fromConstellation: true,
                     mode,
                     constellationName,
-                    $"constellation '{constellationName}' use-global ({globalSelection.Source})"
+                    $"constellation '{constellationName}' fixed"
                 );
             }
 
-            return ResolveGlobalDeadlineSelection(prevDays);
-        }
-
-        private static DeadlineSelection ResolveGlobalDeadlineSelection(int prevDays)
-        {
-            if (ConfigManager.RandomizeDeadline.Value)
+            if (mode == ConstellationDeadlineMode.Random)
             {
-                int d = RollRandomDeadline(
-                    ConfigManager.DeadlineMin.Value,
-                    ConfigManager.DeadlineMax.Value,
-                    prevDays,
-                    out int min,
-                    out int max
-                );
-
+                int d = RollRandomDeadline(min, max, prevDays, out int cMin, out int cMax);
                 return new DeadlineSelection(
                     d,
                     isRandomized: true,
-                    fromConstellation: false,
-                    ConstellationDeadlineMode.UseGlobal,
-                    string.Empty,
-                    $"global random {min}-{max}"
+                    fromConstellation: true,
+                    mode,
+                    constellationName,
+                    $"constellation '{constellationName}' random {cMin}-{cMax}"
                 );
             }
 
-            int fixedDays = Math.Max(1, ConfigManager.DaysToDeadline.Value);
+            DeadlineSelection globalSelection = GetGlobalDeadlineSelection(prevDays);
             return new DeadlineSelection(
-                fixedDays,
-                isRandomized: false,
-                fromConstellation: false,
-                ConstellationDeadlineMode.UseGlobal,
-                string.Empty,
-                "global fixed"
+                globalSelection.Days,
+                globalSelection.IsRandomized,
+                fromConstellation: true,
+                mode,
+                constellationName,
+                $"constellation '{constellationName}' use-global ({globalSelection.Source})"
             );
         }
 
-        private static int RollRandomDeadline(int rawMin, int rawMax, int prevDays, out int min, out int max)
+        return GetGlobalDeadlineSelection(prevDays);
+    }
+
+    private static DeadlineSelection GetGlobalDeadlineSelection(int prevDays)
+    {
+        if (ConfigManager.RandomizeDeadline.Value)
         {
-            min = Math.Max(1, rawMin);
-            max = Math.Max(min, rawMax);
-
-            if (ConfigManager.DeadlineMustChange.Value
-                && min != max
-                && prevDays >= min
-                && prevDays <= max)
-            {
-                int alternatives = (max - min + 1) - 1;
-                int index = UnityEngine.Random.Range(0, alternatives);
-                int dNoRepeat = min + index;
-                if (dNoRepeat >= prevDays)
-                    dNoRepeat++;
-
-                return dNoRepeat;
-            }
-
-            int d = UnityEngine.Random.Range(min, max + 1);
-            return d;
-        }
-
-        private static string DescribeCurrentDeadlineMode(int firstDeadline)
-        {
-            if (ConstellationDeadlineConfig.TryGetCurrentConstellationSettings(
-                out string constellationName,
-                out ConstellationDeadlineMode mode,
-                out int fixedDays,
+            int d = RollRandomDeadline(
+                ConfigManager.DeadlineMin.Value,
+                ConfigManager.DeadlineMax.Value,
+                prevDays,
                 out int min,
-                out int max))
-            {
-                if (mode == ConstellationDeadlineMode.Fixed)
-                    return $"constellation '{constellationName}' fixed {Math.Max(1, fixedDays)}d";
+                out int max
+            );
 
-                if (mode == ConstellationDeadlineMode.Random)
-                    return $"constellation '{constellationName}' randomized {Math.Max(1, min)}-{Math.Max(Math.Max(1, min), max)}d (first: {firstDeadline}d)";
-
-                return $"constellation '{constellationName}' use-global ({DescribeGlobalDeadlineMode(firstDeadline)})";
-            }
-
-            return DescribeGlobalDeadlineMode(firstDeadline);
+            return new DeadlineSelection(
+                d,
+                isRandomized: true,
+                fromConstellation: false,
+                ConstellationDeadlineMode.UseGlobal,
+                string.Empty,
+                $"global random {min}-{max}"
+            );
         }
 
-        private static string DescribeGlobalDeadlineMode(int firstDeadline)
-        {
-            int min = Math.Max(1, ConfigManager.DeadlineMin.Value);
-            int max = Math.Max(min, ConfigManager.DeadlineMax.Value);
+        int fixedDays = Math.Max(1, ConfigManager.DaysToDeadline.Value);
+        return new DeadlineSelection(
+            fixedDays,
+            isRandomized: false,
+            fromConstellation: false,
+            ConstellationDeadlineMode.UseGlobal,
+            string.Empty,
+            "global fixed"
+        );
+    }
 
-            return ConfigManager.RandomizeDeadline.Value
-                ? $"randomized {min}-{max}d (first: {firstDeadline}d)"
-                : $"fixed {Math.Max(1, ConfigManager.DaysToDeadline.Value)}d";
+    private static int RollRandomDeadline(int rawMin, int rawMax, int prevDays, out int min, out int max)
+    {
+        min = Math.Max(1, rawMin);
+        max = Math.Max(min, rawMax);
+
+        if (ConfigManager.DeadlineMustChange.Value
+            && min != max
+            && prevDays >= min
+            && prevDays <= max)
+        {
+            int alternatives = (max - min + 1) - 1;
+            int index = UnityEngine.Random.Range(0, alternatives);
+            int dNoRepeat = min + index;
+            if (dNoRepeat >= prevDays)
+                dNoRepeat++;
+
+            return dNoRepeat;
         }
 
-        internal static void ResetInitialDeadlineTracking()
+        int d = UnityEngine.Random.Range(min, max + 1);
+        return d;
+    }
+
+    private static string DescribeCurrentDeadlineMode(int firstDeadline)
+    {
+        if (ConstellationDeadlineConfig.TryGetCurrentConstellationSettings(
+            out string constellationName,
+            out ConstellationDeadlineMode mode,
+            out int fixedDays,
+            out int min,
+            out int max))
         {
-            _initialDeadlineApplied = false;
-            _initialDeadlineWasConstellationSpecific = false;
+            if (mode == ConstellationDeadlineMode.Fixed)
+                return $"constellation '{constellationName}' fixed {Math.Max(1, fixedDays)}d";
+
+            if (mode == ConstellationDeadlineMode.Random)
+                return $"constellation '{constellationName}' randomized {Math.Max(1, min)}-{Math.Max(Math.Max(1, min), max)}d (first: {firstDeadline}d)";
+
+            return $"constellation '{constellationName}' use-global ({DescribeGlobalDeadlineMode(firstDeadline)})";
         }
 
-        [HarmonyPatch(nameof(TimeOfDay.UpdateProfitQuotaCurrentTime))]
-        [HarmonyPostfix]
-        private static void UpdateProfitQuotaCurrentTime_Postfix(
-            ref float ___timeUntilDeadline,
-            ref float ___totalTime,
-            ref int ___daysUntilDeadline)
+        return DescribeGlobalDeadlineMode(firstDeadline);
+    }
+
+    private static string DescribeGlobalDeadlineMode(int firstDeadline)
+    {
+        int min = Math.Max(1, ConfigManager.DeadlineMin.Value);
+        int max = Math.Max(min, ConfigManager.DeadlineMax.Value);
+
+        return ConfigManager.RandomizeDeadline.Value
+            ? $"randomized {min}-{max}d (first: {firstDeadline}d)"
+            : $"fixed {Math.Max(1, ConfigManager.DaysToDeadline.Value)}d";
+    }
+
+    internal static void ResetInitialDeadlineTracking()
+    {
+        _initialDeadlineApplied = false;
+        _initialDeadlineWasConstellationSpecific = false;
+    }
+
+    [HarmonyPatch(nameof(TimeOfDay.UpdateProfitQuotaCurrentTime))]
+    [HarmonyPostfix]
+    private static void UpdateProfitQuotaCurrentTime_Postfix(
+        ref float ___timeUntilDeadline,
+        ref float ___totalTime,
+        ref int ___daysUntilDeadline)
+    {
+        if (ConfigManager.DisableQuota.Value)
         {
-            if (ConfigManager.DisableQuota.Value)
-            {
-                ApplyDisableQuotaState(ref ___daysUntilDeadline, ref ___totalTime, ref ___timeUntilDeadline);
-            }
+            ApplyDisableQuotaState(ref ___daysUntilDeadline, ref ___totalTime, ref ___timeUntilDeadline);
         }
+    }
 
-        [HarmonyPatch(nameof(TimeOfDay.SetBuyingRateForDay))]
-        [HarmonyPostfix]
-        private static void SetBuyingRateForDay_Postfix(
-            ref float ___timeUntilDeadline,
-            ref float ___totalTime,
-            ref int ___daysUntilDeadline)
+    [HarmonyPatch(nameof(TimeOfDay.SetBuyingRateForDay))]
+    [HarmonyPostfix]
+    private static void SetBuyingRateForDay_Postfix(
+        ref float ___timeUntilDeadline,
+        ref float ___totalTime,
+        ref int ___daysUntilDeadline)
+    {
+        if (ConfigManager.DisableQuota.Value)
         {
-            if (ConfigManager.DisableQuota.Value)
-            {
-                ApplyDisableQuotaState(ref ___daysUntilDeadline, ref ___totalTime, ref ___timeUntilDeadline);
-            }
+            ApplyDisableQuotaState(ref ___daysUntilDeadline, ref ___totalTime, ref ___timeUntilDeadline);
         }
+    }
 
-        private static void ApplyDisableQuotaState(ref int days, ref float totalTime, ref float timeUntilDeadline)
+    private static void ApplyDisableQuotaState(ref int days, ref float totalTime, ref float timeUntilDeadline)
+    {
+        try
         {
-            try
-            {
-                SetDeadlineTimer(totalTime, ref days, ref timeUntilDeadline, quota: ConfigManager.StartingQuota.Value);
+            SetDeadlineTimer(totalTime, ref days, ref timeUntilDeadline, quota: ConfigManager.StartingQuota.Value);
 
-                var sor = StartOfRound.Instance;
-                if (sor != null)
-                {
-                    sor.companyBuyingRate = 1f;
-                    if (sor.deadlineMonitorText != null)
-                        sor.deadlineMonitorText.text = "DEADLINE:\nNEVER";
-                    if (sor.profitQuotaMonitorText != null)
-                        sor.profitQuotaMonitorText.text = "QUOTA:\nDISABLED";
-                }
-            }
-            catch (Exception e)
-            {
-                Plugin.Log.LogWarning($"Could not update DisableQuota monitor state: {e.Message}");
-            }
+            var sor = StartOfRound.Instance;
+            sor.companyBuyingRate = 1f;
+            if (sor.deadlineMonitorText != null)
+                sor.deadlineMonitorText.text = "DEADLINE:\nNEVER";
+            if (sor.profitQuotaMonitorText != null)
+                sor.profitQuotaMonitorText.text = "QUOTA:\nDISABLED";
+        }
+        catch (Exception e)
+        {
+            Plugin.Log.LogWarning($"Could not update DisableQuota monitor state: {e.Message}");
         }
     }
 }

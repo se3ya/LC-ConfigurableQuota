@@ -1,46 +1,41 @@
-﻿using BepInEx;
+using BepInEx;
 using BepInEx.Logging;
-using HarmonyLib;
 using ConfigurableQuota.Compat;
 using ConfigurableQuota.Patches;
+using HarmonyLib;
 
-namespace ConfigurableQuota
+namespace ConfigurableQuota;
+
+[BepInPlugin(MyPluginInfo.PLUGIN_GUID, MyPluginInfo.PLUGIN_NAME, MyPluginInfo.PLUGIN_VERSION)]
+[BepInDependency(ModGUIDs.LethalNetworkAPI)]
+[BepInDependency(ModGUIDs.LethalConstellations, BepInDependency.DependencyFlags.SoftDependency)]
+[BepInDependency(ModGUIDs.LethalMoonUnlocks, BepInDependency.DependencyFlags.SoftDependency)]
+[BepInDependency(ModGUIDs.OpenLib, BepInDependency.DependencyFlags.SoftDependency)]
+[BepInDependency(ModGUIDs.LethalLevelLoader, BepInDependency.DependencyFlags.SoftDependency)]
+[BepInDependency(ModGUIDs.LunarConfig, BepInDependency.DependencyFlags.SoftDependency)]
+[BepInDependency(ModGUIDs.SelfSortingStorage, BepInDependency.DependencyFlags.SoftDependency)]
+[BepInDependency(ModGUIDs.MoreShipUpgrades, BepInDependency.DependencyFlags.SoftDependency)]
+[BepInDependency(ModGUIDs.ScrapInsurance, BepInDependency.DependencyFlags.SoftDependency)]
+public class Plugin : BaseUnityPlugin
 {
-  [BepInPlugin(MyPluginInfo.PLUGIN_GUID, MyPluginInfo.PLUGIN_NAME, MyPluginInfo.PLUGIN_VERSION)]
-  [BepInDependency(ModGUIDs.LETHAL_NETWORK_API_GUID)]
-  [BepInDependency(ModGUIDs.LETHAL_CONSTELLATIONS_GUID, BepInDependency.DependencyFlags.SoftDependency)]
-  [BepInDependency(ModGUIDs.LETHAL_MOON_UNLOCKS_GUID, BepInDependency.DependencyFlags.SoftDependency)]
-  [BepInDependency(ModGUIDs.OPEN_LIB_GUID, BepInDependency.DependencyFlags.SoftDependency)]
-  [BepInDependency(ModGUIDs.LLL_GUID, BepInDependency.DependencyFlags.SoftDependency)]
-  [BepInDependency(ModGUIDs.LUNAR_CONFIG_GUID, BepInDependency.DependencyFlags.SoftDependency)]
-  [BepInDependency(ModGUIDs.SELF_SORTING_STORAGE_GUID, BepInDependency.DependencyFlags.SoftDependency)]
-  [BepInDependency(ModGUIDs.MORE_SHIP_UPGRADES_GUID, BepInDependency.DependencyFlags.SoftDependency)]
-  [BepInDependency(ModGUIDs.SCRAP_INSURANCE_GUID, BepInDependency.DependencyFlags.SoftDependency)]
-  public class Plugin : BaseUnityPlugin
-  {
     private readonly Harmony _harmony = new(MyPluginInfo.PLUGIN_GUID);
+
     public static Plugin Instance { get; private set; } = null!;
     public static ManualLogSource Log { get; private set; } = null!;
 
-    void Awake()
+    private void Awake()
     {
-      Instance = this;
+        Instance = this;
+        Log = Logger;
 
-      Log = base.Logger;
+        Log.LogInfo($"Initializing {MyPluginInfo.PLUGIN_NAME}");
 
-      Log.LogInfo($"Initializing {MyPluginInfo.PLUGIN_NAME}");
+        ConfigManager.Initialize(Config);
+        ConstellationDeadlineConfig.Initialize();
+        NetworkSync.Initialize();
+        _harmony.PatchAll();
+        OpenLibEventBridge.TrySubscribe();
 
-      ConfigManager.Initialize(Config);
-
-      ConstellationDeadlineConfig.Initialize();
-
-      NetworkSync.Initialize();
-
-      _harmony.PatchAll();
-
-      OpenLibEventBridge.TrySubscribe();
-
-      Log.LogInfo($"{MyPluginInfo.PLUGIN_NAME} is loaded!");
+        Log.LogInfo($"Hello {MyPluginInfo.PLUGIN_NAME}!");
     }
-  }
 }

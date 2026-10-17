@@ -3,181 +3,172 @@ using System.Collections;
 using HarmonyLib;
 using UnityEngine;
 
-namespace ConfigurableQuota.Patches
+namespace ConfigurableQuota.Patches;
+
+[HarmonyPatch(typeof(TimeOfDay))]
+internal static class BuyingRatePatch
 {
-    [HarmonyPatch(typeof(TimeOfDay))]
-    internal static class BuyingRatePatch
+    private const float ReapplyDelaySeconds = 3f;
+
+    [HarmonyPatch(nameof(TimeOfDay.SetBuyingRateForDay))]
+    [HarmonyPostfix]
+    [HarmonyPriority(Priority.First)]
+    private static void SetBuyingRateForDay_Postfix(TimeOfDay __instance)
     {
-        private const float ReapplyDelaySeconds = 3f;
-
-        [HarmonyPatch(nameof(TimeOfDay.SetBuyingRateForDay))]
-        [HarmonyPostfix]
-        [HarmonyPriority(Priority.First)]
-        private static void SetBuyingRateForDay_Postfix(TimeOfDay __instance)
+        try
         {
-            try
-            {
-                if (!__instance.IsServer) return;
-                if (ConfigManager.DisableQuota.Value) return;
-
-                var sor = StartOfRound.Instance;
-                if (sor == null) return;
-
-                float vanillaRate = Mathf.Max(0.3f, sor.companyBuyingRate);
-                int daysUntilDeadline = __instance.daysUntilDeadline;
-
-                (float rate, bool isJackpot, string source) = ResolveRate(vanillaRate, daysUntilDeadline);
-
-                sor.companyBuyingRate = rate;
-
-                __instance.StartCoroutine(FinalizeBuyRate(isJackpot, source));
-            }
-            catch (Exception e)
-            {
-                Plugin.Log.LogWarning($"Could not apply buy rate modifiers: {e.Message}");
-            }
-        }
-
-        internal static void ApplyReceivedBuyingRate(float rate, bool isJackpot, bool silent = false)
-        {
-            var sor = StartOfRound.Instance;
-            if (sor != null)
-                sor.companyBuyingRate = rate;
-
-            if (!silent)
-                DisplayBuyRateAlert(rate, isJackpot);
-        }
-
-        private static (float rate, bool isJackpot, string source) ResolveRate(float vanillaRate, int daysUntilDeadline)
-        {
-            bool minMax = ConfigManager.MinMaxRateEnabled.Value;
-            float minRate = ConfigManager.MinRate.Value;
-            float maxRate = Mathf.Max(minRate, ConfigManager.MaxRate.Value);
-
-            bool jackpotEnabled = ConfigManager.JackpotEnabled.Value;
-            bool jackpotLDOnly = ConfigManager.JackpotLastDayOnly.Value;
-            float jackpotChance = Mathf.Clamp01(ConfigManager.JackpotChance.Value);
-            float jackpotMin = ConfigManager.JackpotMinRate.Value;
-            float jackpotMax = Mathf.Max(jackpotMin, ConfigManager.JackpotMaxRate.Value);
-
-            bool lastDayEnabled = ConfigManager.LastDayRateEnabled.Value;
-            float lastDayChance = Mathf.Clamp01(ConfigManager.LastDayRangeChance.Value);
-            float lastDayMin = ConfigManager.LastDayMinRate.Value;
-            float lastDayMax = Mathf.Max(lastDayMin, ConfigManager.LastDayMaxRate.Value);
-
-            bool randomEnabled = ConfigManager.RandomRateEnabled.Value;
-
-            bool isLastDay = daysUntilDeadline == 0;
-
-            if (jackpotEnabled && (!jackpotLDOnly || isLastDay) && UnityEngine.Random.value <= jackpotChance)
-            {
-                float rate = (jackpotMin == jackpotMax)
-                    ? jackpotMin
-                    : UnityEngine.Random.Range(jackpotMin, jackpotMax);
-                return (rate, true, jackpotLDOnly ? "jackpot last-day" : "jackpot any-day");
-            }
-
-            if (lastDayEnabled && isLastDay)
-            {
-                if (lastDayMin == lastDayMax)
-                    return (lastDayMin, false, "last-day fixed");
-
-                if (UnityEngine.Random.value <= lastDayChance)
-                    return (UnityEngine.Random.Range(lastDayMin, lastDayMax), false, "last-day ranged");
-
-                return (1f, false, "last-day fallback");
-            }
-
-            if (randomEnabled && minMax)
-                return (UnityEngine.Random.Range(minRate, maxRate), false, "random in range");
-
-            if (minMax)
-                return (Mathf.Clamp(vanillaRate, minRate, maxRate), false, "min/max clamp");
-
-            return (vanillaRate, false, "vanilla");
-        }
-
-        private static IEnumerator FinalizeBuyRate(bool isJackpot, string source)
-        {
-            yield return null;
+            if (!__instance.IsServer) return;
+            if (ConfigManager.DisableQuota.Value) return;
 
             var sor = StartOfRound.Instance;
-            if (sor == null) yield break;
+            float vanillaRate = Mathf.Max(0.3f, sor.companyBuyingRate);
+            int daysUntilDeadline = __instance.daysUntilDeadline;
 
-            float finalRate = sor.companyBuyingRate;
+            (float rate, bool isJackpot, string source) = GetRate(vanillaRate, daysUntilDeadline);
 
-            Plugin.Log.LogInfo($"Buy rate set to {Mathf.RoundToInt(finalRate * 100f)}% ({source}, jackpot={isJackpot}).");
+            sor.companyBuyingRate = rate;
 
-            NetworkSync.SyncBuyingRateToClients(finalRate, isJackpot);
-            DisplayBuyRateAlert(finalRate, isJackpot);
+            __instance.StartCoroutine(FinalizeBuyRate(isJackpot, source));
+        }
+        catch (Exception e)
+        {
+            Plugin.Log.LogWarning($"Could not apply buy rate modifiers: {e.Message}");
+        }
+    }
 
-            yield return new WaitForSeconds(ReapplyDelaySeconds);
+    internal static void ApplyReceivedBuyingRate(float rate, bool isJackpot, bool silent = false)
+    {
+        var sor = StartOfRound.Instance;
+        if (sor != null)
+            sor.companyBuyingRate = rate;
 
-            sor = StartOfRound.Instance;
-            if (sor == null) yield break;
+        if (!silent)
+            DisplayBuyRateAlert(rate, isJackpot);
+    }
 
-            if (!Mathf.Approximately(sor.companyBuyingRate, finalRate))
-            {
-                sor.companyBuyingRate = finalRate;
-                NetworkSync.SyncBuyingRateToClients(finalRate, isJackpot, silent: true);
-                Plugin.Log.LogDebug($"Re-applied buy rate {Mathf.RoundToInt(finalRate * 100f)}% after {ReapplyDelaySeconds:0.#}s.");
-            }
+    private static (float rate, bool isJackpot, string source) GetRate(float vanillaRate, int daysUntilDeadline)
+    {
+        bool minMax = ConfigManager.MinMaxRateEnabled.Value;
+        float minRate = ConfigManager.MinRate.Value;
+        float maxRate = Mathf.Max(minRate, ConfigManager.MaxRate.Value);
+
+        bool jackpotEnabled = ConfigManager.JackpotEnabled.Value;
+        bool jackpotLDOnly = ConfigManager.JackpotLastDayOnly.Value;
+        float jackpotChance = Mathf.Clamp01(ConfigManager.JackpotChance.Value);
+        float jackpotMin = ConfigManager.JackpotMinRate.Value;
+        float jackpotMax = Mathf.Max(jackpotMin, ConfigManager.JackpotMaxRate.Value);
+
+        bool lastDayEnabled = ConfigManager.LastDayRateEnabled.Value;
+        float lastDayChance = Mathf.Clamp01(ConfigManager.LastDayRangeChance.Value);
+        float lastDayMin = ConfigManager.LastDayMinRate.Value;
+        float lastDayMax = Mathf.Max(lastDayMin, ConfigManager.LastDayMaxRate.Value);
+
+        bool randomEnabled = ConfigManager.RandomRateEnabled.Value;
+
+        bool isLastDay = daysUntilDeadline == 0;
+
+        if (jackpotEnabled && (!jackpotLDOnly || isLastDay) && UnityEngine.Random.value <= jackpotChance)
+        {
+            float rate = (jackpotMin == jackpotMax)
+                ? jackpotMin
+                : UnityEngine.Random.Range(jackpotMin, jackpotMax);
+            return (rate, true, jackpotLDOnly ? "jackpot last-day" : "jackpot any-day");
         }
 
-        internal static void DisplayBuyRateAlert(float rate, bool isJackpot)
+        if (lastDayEnabled && isLastDay)
         {
-            try
-            {
-                var hud = HUDManager.Instance;
-                var tod = TimeOfDay.Instance;
-                if (hud == null || tod == null) return;
+            if (lastDayMin == lastDayMax)
+                return (lastDayMin, false, "last-day fixed");
 
-                bool wantAlert = isJackpot
-                    ? ConfigManager.JackpotAlertEnabled.Value
-                    : ConfigManager.BuyRateAlertEnabled.Value;
-                if (!wantAlert) return;
+            if (UnityEngine.Random.value <= lastDayChance)
+                return (UnityEngine.Random.Range(lastDayMin, lastDayMax), false, "last-day ranged");
 
-                int rounded = Mathf.RoundToInt(rate * 100f);
-                float delay = Mathf.Max(0f, ConfigManager.AlertDelaySeconds.Value);
-
-                tod.StartCoroutine(AlertCoroutine(rounded, isJackpot, delay));
-            }
-            catch (Exception e)
-            {
-                Plugin.Log.LogDebug($"Could not schedule buy-rate alert: {e.Message}");
-            }
+            return (1f, false, "last-day fallback");
         }
 
-        private static IEnumerator AlertCoroutine(int rateRounded, bool isJackpot, float delay)
+        if (randomEnabled && minMax)
+            return (UnityEngine.Random.Range(minRate, maxRate), false, "random in range");
+
+        if (minMax)
+            return (Mathf.Clamp(vanillaRate, minRate, maxRate), false, "min/max clamp");
+
+        return (vanillaRate, false, "vanilla");
+    }
+
+    private static IEnumerator FinalizeBuyRate(bool isJackpot, string source)
+    {
+        yield return null;
+
+        int quota = TimeOfDay.Instance.timesFulfilledQuota;
+        float finalRate = StartOfRound.Instance.companyBuyingRate;
+
+        Plugin.Log.LogInfo($"Buy rate set to {Mathf.RoundToInt(finalRate * 100f)}% ({source}).");
+
+        NetworkSync.SyncBuyingRateToClients(finalRate, isJackpot);
+        DisplayBuyRateAlert(finalRate, isJackpot);
+
+        yield return new WaitForSeconds(ReapplyDelaySeconds);
+
+        if (TimeOfDay.Instance.timesFulfilledQuota != quota) yield break;
+
+        if (!Mathf.Approximately(StartOfRound.Instance.companyBuyingRate, finalRate))
         {
-            yield return new WaitForSecondsRealtime(delay);
+            StartOfRound.Instance.companyBuyingRate = finalRate;
+            Plugin.Log.LogDebug($"Re-applied buy rate {Mathf.RoundToInt(finalRate * 100f)}% after {ReapplyDelaySeconds:0.#}s.");
+        }
 
-            var hud = HUDManager.Instance;
-            if (hud == null) yield break;
+        NetworkSync.SyncBuyingRateToClients(finalRate, isJackpot, silent: true);
+    }
 
-            if (isJackpot)
-            {
-                hud.DisplayTip(
-                    "<color=#ffc526>SCRAP EMERGENCY</color>",
-                    $"<color=#fcbf17>\n* Buying rates have jumped to {rateRounded}%</color>",
-                    true,
-                    false,
-                    "LC_JackpotTip1"
-                );
+    internal static void DisplayBuyRateAlert(float rate, bool isJackpot)
+    {
+        try
+        {
+            bool wantAlert = isJackpot
+                ? ConfigManager.JackpotAlertEnabled.Value
+                : ConfigManager.BuyRateAlertEnabled.Value;
+            if (!wantAlert) return;
 
-                if (hud.UIAudio != null && hud.globalNotificationSFX != null)
-                    hud.UIAudio.PlayOneShot(hud.globalNotificationSFX);
-            }
-            else
-            {
-                hud.DisplayTip(
-                    "New Scrap Rate",
-                    $"\n* Buying rates have changed to {rateRounded}%",
-                    false,
-                    false,
-                    "LC_JackpotTip2"
-                );
-            }
+            int rounded = Mathf.RoundToInt(rate * 100f);
+            float delay = Mathf.Max(0f, ConfigManager.AlertDelaySeconds.Value);
+
+            TimeOfDay.Instance.StartCoroutine(AlertCoroutine(rounded, isJackpot, delay, TimeOfDay.Instance.timesFulfilledQuota));
+        }
+        catch (Exception e)
+        {
+            Plugin.Log.LogDebug($"Could not schedule buy-rate alert: {e.Message}");
+        }
+    }
+
+    private static IEnumerator AlertCoroutine(int rateRounded, bool isJackpot, float delay, int quota)
+    {
+        yield return new WaitForSecondsRealtime(delay);
+
+        if (TimeOfDay.Instance.timesFulfilledQuota != quota) yield break;
+
+        var hud = HUDManager.Instance;
+        if (isJackpot)
+        {
+            hud.DisplayTip(
+                "<color=#ffc526>SCRAP EMERGENCY</color>",
+                $"<color=#fcbf17>\n* Buying rates have jumped to {rateRounded}%</color>",
+                true,
+                false,
+                "LC_JackpotTip1"
+            );
+
+            if (hud.UIAudio != null && hud.globalNotificationSFX != null)
+                hud.UIAudio.PlayOneShot(hud.globalNotificationSFX);
+        }
+        else
+        {
+            hud.DisplayTip(
+                "New Scrap Rate",
+                $"\n* Buying rates have changed to {rateRounded}%",
+                false,
+                false,
+                "LC_JackpotTip2"
+            );
         }
     }
 }

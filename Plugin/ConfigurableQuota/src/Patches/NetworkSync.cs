@@ -3,577 +3,645 @@ using System.Collections;
 using LethalNetworkAPI;
 using UnityEngine;
 
-namespace ConfigurableQuota.Patches
+namespace ConfigurableQuota.Patches;
+
+internal static class NetworkSync
 {
-    internal static class NetworkSync
+    private static LNetworkMessage<SyncQuotaData>? _syncQuotaMessage;
+    private static LNetworkMessage<SyncValueLossData>? _syncValueLossMessage;
+    private static LNetworkMessage<int>? _syncDeadlineMessage;
+    private static LNetworkMessage<int>? _syncRolloverMessage;
+    private static LNetworkMessage<RolloverStatusData>? _rolloverStatusMessage;
+    private static LNetworkMessage<SyncScrapLossSummary>? _syncScrapLossSummaryMessage;
+    private static LNetworkMessage<SyncBuyingRateData>? _syncBuyingRateMessage;
+    private static LNetworkMessage<SyncPenaltySummary>? _syncPenaltySummaryMessage;
+    private static LNetworkMessage<float>? _syncInteriorScaleMessage;
+    private static LNetworkMessage<int>? _syncDeadlineLengthMessage;
+
+    public static void Initialize()
     {
-        private static LNetworkMessage<int>? _syncCreditsMessage;
-        private static LNetworkMessage<SyncQuotaData>? _syncQuotaMessage;
-        private static LNetworkMessage<SyncValueLossData>? _syncValueLossMessage;
-        private static LNetworkMessage<int>? _syncDeadlineMessage;
-        private static LNetworkMessage<int>? _syncRolloverMessage;
-        private static LNetworkMessage<RolloverStatusData>? _rolloverStatusMessage;
-        private static LNetworkMessage<SyncScrapLossSummary>? _syncScrapLossSummaryMessage;
-        private static LNetworkMessage<SyncBuyingRateData>? _syncBuyingRateMessage;
-
-        public static void Initialize()
+        try
         {
-            try
-            {
-                _syncCreditsMessage = LNetworkMessage<int>.Connect(
-                    "ConfigurableQuota_SyncCredits",
-                    onClientReceived: OnCreditsReceived
-                );
+            _syncQuotaMessage = LNetworkMessage<SyncQuotaData>.Connect(
+                "ConfigurableQuota_SyncQuota",
+                onClientReceived: OnQuotaReceived
+            );
 
-                _syncQuotaMessage = LNetworkMessage<SyncQuotaData>.Connect(
-                    "ConfigurableQuota_SyncQuota",
-                    onClientReceived: OnQuotaReceived
-                );
+            _syncValueLossMessage = LNetworkMessage<SyncValueLossData>.Connect(
+                "ConfigurableQuota_SyncValueLoss",
+                onClientReceived: OnValueLossReceived
+            );
 
-                _syncValueLossMessage = LNetworkMessage<SyncValueLossData>.Connect(
-                    "ConfigurableQuota_SyncValueLoss",
-                    onClientReceived: OnValueLossReceived
-                );
+            _syncDeadlineMessage = LNetworkMessage<int>.Connect(
+                "ConfigurableQuota_SyncDeadline",
+                onClientReceived: OnDeadlineReceived
+            );
 
-                _syncDeadlineMessage = LNetworkMessage<int>.Connect(
-                    "ConfigurableQuota_SyncDeadline",
-                    onClientReceived: OnDeadlineReceived
-                );
+            _syncRolloverMessage = LNetworkMessage<int>.Connect(
+                "ConfigurableQuota_SyncRollover",
+                onClientReceived: OnRolloverReceived
+            );
 
-                _syncRolloverMessage = LNetworkMessage<int>.Connect(
-                    "ConfigurableQuota_SyncRollover",
-                    onClientReceived: OnRolloverReceived
-                );
+            _rolloverStatusMessage = LNetworkMessage<RolloverStatusData>.Connect(
+                "ConfigurableQuota_RolloverStatus",
+                onClientReceived: OnRolloverStatusReceived
+            );
 
-                _rolloverStatusMessage = LNetworkMessage<RolloverStatusData>.Connect(
-                    "ConfigurableQuota_RolloverStatus",
-                    onClientReceived: OnRolloverStatusReceived
-                );
+            _syncScrapLossSummaryMessage = LNetworkMessage<SyncScrapLossSummary>.Connect(
+                "ConfigurableQuota_SyncScrapLossSummary",
+                onClientReceived: OnScrapLossSummaryReceived
+            );
 
-                _syncScrapLossSummaryMessage = LNetworkMessage<SyncScrapLossSummary>.Connect(
-                    "ConfigurableQuota_SyncScrapLossSummary",
-                    onClientReceived: OnScrapLossSummaryReceived
-                );
+            _syncBuyingRateMessage = LNetworkMessage<SyncBuyingRateData>.Connect(
+                "ConfigurableQuota_SyncBuyingRate",
+                onClientReceived: OnBuyingRateReceived
+            );
 
-                _syncBuyingRateMessage = LNetworkMessage<SyncBuyingRateData>.Connect(
-                    "ConfigurableQuota_SyncBuyingRate",
-                    onClientReceived: OnBuyingRateReceived
-                );
+            _syncPenaltySummaryMessage = LNetworkMessage<SyncPenaltySummary>.Connect(
+                "ConfigurableQuota_SyncPenaltySummary",
+                onClientReceived: OnPenaltySummaryReceived
+            );
 
-                Plugin.Log.LogInfo("Network sync is ready.");
-            }
-            catch (Exception ex)
-            {
-                Plugin.Log.LogError($"Could not initialize network sync: {ex.Message}");
-            }
+            _syncInteriorScaleMessage = LNetworkMessage<float>.Connect(
+                "ConfigurableQuota_SyncInteriorScale",
+                onClientReceived: OnInteriorScaleReceived
+            );
+
+            _syncDeadlineLengthMessage = LNetworkMessage<int>.Connect(
+                "ConfigurableQuota_SyncDeadlineLength",
+                onClientReceived: OnDeadlineLengthReceived
+            );
+
+            Plugin.Log.LogDebug("Network messages registered.");
         }
-
-        #region Credits Sync
-
-        public static void SyncCreditsToClients(int credits)
+        catch (Exception ex)
         {
-            try
-            {
-                if (_syncCreditsMessage == null)
-                {
-                    Plugin.Log.LogWarning("Credits message not initialized");
-                    return;
-                }
-
-                _syncCreditsMessage.SendClients(credits);
-            }
-            catch (Exception ex)
-            {
-                Plugin.Log.LogError($"Could not sync credits: {ex.Message}");
-            }
+            Plugin.Log.LogError($"Could not initialize network sync: {ex.Message}");
         }
+    }
 
-        private static void OnCreditsReceived(int credits)
+    #region Scrap Loss Summary Sync
+
+    public static void SyncScrapLossSummaryToClients(int beforeValue, int afterValue)
+    {
+        try
         {
-            try
+            if (_syncScrapLossSummaryMessage == null)
             {
-                var term = UnityEngine.Object.FindObjectOfType<Terminal>();
-                if (term != null) term.groupCredits = credits;
-            }
-            catch (Exception ex)
-            {
-                Plugin.Log.LogError($"Could not apply synced credits on client: {ex.Message}");
-            }
-        }
-
-        #endregion
-
-        #region Scrap Loss Summary Sync
-
-        public static void SyncScrapLossSummaryToClients(int beforeValue, int afterValue)
-        {
-            try
-            {
-                if (_syncScrapLossSummaryMessage == null)
-                {
-                    Plugin.Log.LogWarning("Scrap loss summary message not initialized");
-                    return;
-                }
-
-                _syncScrapLossSummaryMessage.SendClients(new SyncScrapLossSummary(beforeValue, afterValue));
-            }
-            catch (Exception ex)
-            {
-                Plugin.Log.LogError($"Could not sync scrap loss summary: {ex.Message}");
-            }
-        }
-
-        private static void OnScrapLossSummaryReceived(SyncScrapLossSummary data)
-        {
-            if (Unity.Netcode.NetworkManager.Singleton != null && Unity.Netcode.NetworkManager.Singleton.IsServer)
+                Plugin.Log.LogWarning("Scrap loss summary message not initialized");
                 return;
-
-            try
-            {
-                if (data.BeforeValue > 0)
-                {
-                    PenaltiesOnLandingPatch.CacheScrapLossSummary(data.BeforeValue, data.AfterValue);
-                }
-                else
-                {
-                    PenaltiesOnLandingPatch.ClearScrapLossSummary();
-                }
-
-                PenaltiesOnLandingPatch.HasAllDeadSnapshot = true;
-                HudQuotaAnimationPatch.TryApplyAdvancedFeaturesEndscreen();
             }
-            catch (Exception ex)
-            {
-                Plugin.Log.LogError($"Could not apply synced scrap loss summary on client: {ex.Message}");
-            }
+
+            _syncScrapLossSummaryMessage.SendClients(new SyncScrapLossSummary(beforeValue, afterValue));
         }
-
-        #endregion
-
-        #region Quota Sync
-
-        public static void SyncQuotaToClients(int quota, int penaltyDelta = 0)
+        catch (Exception ex)
         {
-            try
-            {
-                if (_syncQuotaMessage == null)
-                {
-                    Plugin.Log.LogWarning("Quota message not initialized");
-                    return;
-                }
-
-                _syncQuotaMessage.SendClients(new SyncQuotaData(quota, penaltyDelta));
-            }
-            catch (Exception ex)
-            {
-                Plugin.Log.LogError($"Could not sync quota: {ex.Message}");
-            }
+            Plugin.Log.LogError($"Could not sync scrap loss summary: {ex.Message}");
         }
+    }
 
-        public static void SyncQuotaToClient(int quota, ulong clientId)
+    private static void OnScrapLossSummaryReceived(SyncScrapLossSummary data)
+    {
+        if (Unity.Netcode.NetworkManager.Singleton.IsServer)
+            return;
+
+        try
         {
-            try
+            if (data.BeforeValue > 0)
             {
-                if (_syncQuotaMessage == null)
-                {
-                    Plugin.Log.LogWarning("Quota message not initialized");
-                    return;
-                }
+                PenaltiesOnLandingPatch.CacheScrapLossSummary(data.BeforeValue, data.AfterValue);
+            }
+            else
+            {
+                PenaltiesOnLandingPatch.ClearScrapLossSummary();
+            }
 
-                _syncQuotaMessage.SendClient(new SyncQuotaData(quota, 0), clientId);
-            }
-            catch (Exception ex)
-            {
-                Plugin.Log.LogError($"Could not sync quota to client {clientId}: {ex.Message}");
-            }
+            PenaltiesOnLandingPatch.HasAllDeadSnapshot = true;
+            HudQuotaAnimationPatch.TryApplyAdvancedFeaturesEndscreen();
         }
-
-        private static void OnQuotaReceived(SyncQuotaData data)
+        catch (Exception ex)
         {
-            try
-            {
-                var tod = TimeOfDay.Instance;
-                if (tod != null)
-                {
-                    tod.profitQuota = data.Quota;
-                }
-                PenaltiesOnLandingPatch.CachedQuotaPenaltyDelta = data.PenaltyDelta;
-            }
-            catch (Exception ex)
-            {
-                Plugin.Log.LogError($"Could not apply synced quota on client: {ex.Message}");
-            }
+            Plugin.Log.LogError($"Could not apply synced scrap loss summary on client: {ex.Message}");
         }
+    }
 
-        #endregion
+    #endregion
 
-        #region Value Loss Sync
+    #region Penalty Summary Sync
 
-        public static void SyncValueLossToClients(SyncValueLossData[] items)
+    public static void SyncPenaltySummaryToClients(SyncPenaltySummary summary)
+    {
+        try
         {
-            try
+            if (_syncPenaltySummaryMessage == null)
             {
-                if (_syncValueLossMessage == null)
-                {
-                    Plugin.Log.LogWarning("Value loss message not initialized");
-                    return;
-                }
+                Plugin.Log.LogWarning("Penalty summary message not initialized");
+                return;
+            }
 
-                foreach (var item in items)
-                {
-                    _syncValueLossMessage.SendClients(item);
-                }
-            }
-            catch (Exception ex)
-            {
-                Plugin.Log.LogError($"Could not sync value loss: {ex.Message}");
-            }
+            _syncPenaltySummaryMessage.SendClients(summary);
         }
-
-        private static void OnValueLossReceived(SyncValueLossData data)
+        catch (Exception ex)
         {
-            try
-            {
-                var spawnManager = Unity.Netcode.NetworkManager.Singleton?.SpawnManager;
-                if (spawnManager == null) return;
-
-                if (!spawnManager.SpawnedObjects.TryGetValue(data.NetworkObjectId, out var netObj) || netObj == null)
-                    return;
-
-                var item = netObj.GetComponent<GrabbableObject>();
-                if (item == null || item.itemProperties?.isScrap != true) return;
-
-                item.scrapValue = data.NewValue;
-                try { item.SetScrapValue(data.NewValue); } catch { }
-            }
-            catch (Exception ex)
-            {
-                Plugin.Log.LogError($"Could not apply synced value loss on client: {ex.Message}");
-            }
+            Plugin.Log.LogError($"Could not sync penalty summary: {ex.Message}");
         }
+    }
 
-        #endregion
+    private static void OnPenaltySummaryReceived(SyncPenaltySummary summary)
+    {
+        if (Unity.Netcode.NetworkManager.Singleton.IsServer)
+            return;
 
-        #region Deadline Sync
+        PenaltiesOnLandingPatch.Summary = summary;
+        PenaltiesOnLandingPatch.HasPenaltyCache = true;
+    }
 
-        public static void SyncDeadlineToClients(int days)
+    #endregion
+
+    #region Interior Scale Sync
+
+    public static void SyncInteriorScaleToClients(float scale)
+    {
+        try
         {
-            try
+            if (_syncInteriorScaleMessage == null)
             {
-                ApplyDeadline(days);
-
-                if (_syncDeadlineMessage == null)
-                {
-                    Plugin.Log.LogWarning("Deadline message not initialized");
-                    return;
-                }
-
-                _syncDeadlineMessage.SendClients(days);
+                Plugin.Log.LogWarning("Interior scale message not initialized");
+                return;
             }
-            catch (Exception ex)
-            {
-                Plugin.Log.LogError($"Could not sync deadline: {ex.Message}");
-            }
+
+            _syncInteriorScaleMessage.SendClients(scale);
         }
-
-        public static void SyncDeadlineToClient(int days, ulong clientId)
+        catch (Exception ex)
         {
-            try
-            {
-                if (_syncDeadlineMessage == null)
-                {
-                    Plugin.Log.LogWarning("Deadline message not initialized");
-                    return;
-                }
-
-                _syncDeadlineMessage.SendClient(days, clientId);
-            }
-            catch (Exception ex)
-            {
-                Plugin.Log.LogError($"Could not sync deadline to client {clientId}: {ex.Message}");
-            }
+            Plugin.Log.LogError($"Could not sync interior scale: {ex.Message}");
         }
+    }
 
-        private static void OnDeadlineReceived(int days)
+    private static void OnInteriorScaleReceived(float scale)
+    {
+        if (Unity.Netcode.NetworkManager.Singleton.IsServer)
+            return;
+
+        DynamicLevelPatches.InteriorScale = scale;
+    }
+
+    #endregion
+
+    #region Quota Sync
+
+    public static void SyncQuotaToClients(int quota, int penaltyDelta = 0)
+    {
+        try
         {
-            try
+            if (_syncQuotaMessage == null)
             {
-                ApplyDeadline(days);
+                Plugin.Log.LogWarning("Quota message not initialized");
+                return;
             }
-            catch (Exception ex)
-            {
-                Plugin.Log.LogError($"Could not apply synced deadline on client: {ex.Message}");
-            }
-        }
 
-        private static void ApplyDeadline(int days)
+            _syncQuotaMessage.SendClients(new SyncQuotaData(quota, penaltyDelta));
+        }
+        catch (Exception ex)
+        {
+            Plugin.Log.LogError($"Could not sync quota: {ex.Message}");
+        }
+    }
+
+    public static void SyncQuotaToClient(int quota, ulong clientId)
+    {
+        try
+        {
+            if (_syncQuotaMessage == null)
+            {
+                Plugin.Log.LogWarning("Quota message not initialized");
+                return;
+            }
+
+            _syncQuotaMessage.SendClient(new SyncQuotaData(quota, 0), clientId);
+        }
+        catch (Exception ex)
+        {
+            Plugin.Log.LogError($"Could not sync quota to client {clientId}: {ex.Message}");
+        }
+    }
+
+    private static void OnQuotaReceived(SyncQuotaData data)
+    {
+        try
         {
             var tod = TimeOfDay.Instance;
-            if (tod == null) return;
-
-            int clampedDays = Mathf.Max(1, days);
-
-            float dayDuration = tod.totalTime;
-            if (dayDuration <= 0f && tod.daysUntilDeadline > 0 && tod.timeUntilDeadline > 0f)
-                dayDuration = tod.timeUntilDeadline / tod.daysUntilDeadline;
-
-            if (tod.quotaVariables != null)
-                tod.quotaVariables.deadlineDaysAmount = clampedDays;
-
-            tod.daysUntilDeadline = clampedDays;
-            if (dayDuration > 0f)
-                tod.timeUntilDeadline = clampedDays * dayDuration;
-        }
-
-        #endregion
-
-        #region Rollover Sync
-
-        public static void SyncRolloverToClients(int rollover)
-        {
-            try
+            if (tod != null)
             {
-                if (_syncRolloverMessage == null)
-                {
-                    Plugin.Log.LogWarning("Rollover message not initialized");
-                    return;
-                }
-
-                _syncRolloverMessage.SendClients(rollover);
+                tod.profitQuota = data.Quota;
             }
-            catch (Exception ex)
+            PenaltiesOnLandingPatch.CachedQuotaPenaltyDelta = data.PenaltyDelta;
+        }
+        catch (Exception ex)
+        {
+            Plugin.Log.LogError($"Could not apply synced quota on client: {ex.Message}");
+        }
+    }
+
+    #endregion
+
+    #region Value Loss Sync
+
+    public static void SyncValueLossToClients(SyncValueLossData[] items)
+    {
+        try
+        {
+            if (_syncValueLossMessage == null)
             {
-                Plugin.Log.LogError($"Could not sync rollover: {ex.Message}");
+                Plugin.Log.LogWarning("Value loss message not initialized");
+                return;
+            }
+
+            foreach (var item in items)
+            {
+                _syncValueLossMessage.SendClients(item);
             }
         }
-
-        public static void SyncRolloverToClient(int rollover, ulong clientId)
+        catch (Exception ex)
         {
-            try
-            {
-                if (_syncRolloverMessage == null)
-                {
-                    Plugin.Log.LogWarning("Rollover message not initialized");
-                    return;
-                }
-
-                _syncRolloverMessage.SendClient(rollover, clientId);
-            }
-            catch (Exception ex)
-            {
-                Plugin.Log.LogError($"Could not sync rollover to client {clientId}: {ex.Message}");
-            }
+            Plugin.Log.LogError($"Could not sync value loss: {ex.Message}");
         }
+    }
 
-        private static void OnRolloverReceived(int rollover)
+    private static void OnValueLossReceived(SyncValueLossData data)
+    {
+        try
         {
-            try
-            {
-                var tod = TimeOfDay.Instance;
-                if (tod != null)
-                    tod.quotaFulfilled = Math.Max(0, rollover);
-            }
-            catch (Exception ex)
-            {
-                Plugin.Log.LogError($"Could not apply synced rollover on client: {ex.Message}");
-            }
-        }
-
-        public static void ReportRolloverStatus(int bank, int quota, int deadline)
-        {
-            ShowRolloverStatus(bank, quota, deadline);
-
-            try
-            {
-                if (_rolloverStatusMessage == null)
-                {
-                    Plugin.Log.LogWarning("Rollover status message not initialized");
-                    return;
-                }
-
-                _rolloverStatusMessage.SendClients(new RolloverStatusData(bank, quota, deadline));
-            }
-            catch (Exception ex)
-            {
-                Plugin.Log.LogError($"Could not send the rollover status: {ex.Message}");
-            }
-        }
-
-        private static void OnRolloverStatusReceived(RolloverStatusData data)
-        {
-            if (Unity.Netcode.NetworkManager.Singleton != null && Unity.Netcode.NetworkManager.Singleton.IsServer)
+            var spawnManager = Unity.Netcode.NetworkManager.Singleton.SpawnManager;
+            if (!spawnManager.SpawnedObjects.TryGetValue(data.NetworkObjectId, out var netObj) || netObj == null)
                 return;
 
-            ShowRolloverStatus(data.Bank, data.Quota, data.Deadline);
+            var item = netObj.GetComponent<GrabbableObject>();
+            if (item == null || item.itemProperties?.isScrap != true) return;
+
+            item.scrapValue = data.NewValue;
+            try { item.SetScrapValue(data.NewValue); } catch { }
         }
-
-        private static void ShowRolloverStatus(int bank, int quota, int deadline)
+        catch (Exception ex)
         {
-            try
-            {
-                if (!ConfigManager.RolloverAlertEnabled.Value) return;
-
-                var hud = HUDManager.Instance;
-                if (hud == null) return;
-
-                hud.StartCoroutine(RolloverStatusRoutine(hud, bank, quota, deadline));
-            }
-            catch (Exception ex)
-            {
-                Plugin.Log.LogError($"Could not show the rollover status: {ex.Message}");
-            }
+            Plugin.Log.LogError($"Could not apply synced value loss on client: {ex.Message}");
         }
+    }
 
-        private static IEnumerator RolloverStatusRoutine(HUDManager hud, int bank, int quota, int deadline)
+    #endregion
+
+    #region Deadline Sync
+
+    public static void SyncDeadlineToClients(int days)
+    {
+        try
         {
-            yield return new WaitForSecondsRealtime(1f);
+            ApplyDeadline(days);
 
-            float waited = 0f;
-            while (hud != null && hud.displayingNewQuota && waited < 60f)
+            if (_syncDeadlineMessage == null)
             {
-                waited += Time.unscaledDeltaTime;
-                yield return null;
-            }
-
-            yield return new WaitForSecondsRealtime(1.5f);
-
-            if (hud == null) yield break;
-
-            string days = deadline == 1 ? "1 day" : $"{deadline} days";
-
-            hud.DisplayTip(
-                "<color=#ffc526>ROLLOVER SPENT</color>",
-                $"<color=#fcbf17>\n* Rollover only covers ${bank} of ${quota}, sell ${quota - bank} within {days}</color>",
-                true,
-                false,
-                "LC_RolloverTip"
-            );
-        }
-
-        #endregion
-
-        #region Buying Rate Sync
-
-        public static void SyncBuyingRateToClients(float rate, bool isJackpot, bool silent = false)
-        {
-            try
-            {
-                if (_syncBuyingRateMessage == null)
-                {
-                    Plugin.Log.LogWarning("Buying rate message not initialized");
-                    return;
-                }
-
-                _syncBuyingRateMessage.SendClients(new SyncBuyingRateData(rate, isJackpot, silent));
-            }
-            catch (Exception ex)
-            {
-                Plugin.Log.LogError($"Could not sync buying rate: {ex.Message}");
-            }
-        }
-
-        public static void SyncBuyingRateToClient(float rate, bool isJackpot, ulong clientId, bool silent = false)
-        {
-            try
-            {
-                if (_syncBuyingRateMessage == null)
-                {
-                    Plugin.Log.LogWarning("Buying rate message not initialized");
-                    return;
-                }
-
-                _syncBuyingRateMessage.SendClient(new SyncBuyingRateData(rate, isJackpot, silent), clientId);
-            }
-            catch (Exception ex)
-            {
-                Plugin.Log.LogError($"Could not sync buying rate to client {clientId}: {ex.Message}");
-            }
-        }
-
-        private static void OnBuyingRateReceived(SyncBuyingRateData data)
-        {
-            if (Unity.Netcode.NetworkManager.Singleton != null && Unity.Netcode.NetworkManager.Singleton.IsServer)
+                Plugin.Log.LogWarning("Deadline message not initialized");
                 return;
-
-            try
-            {
-                BuyingRatePatch.ApplyReceivedBuyingRate(data.Rate, data.IsJackpot, data.Silent);
             }
-            catch (Exception ex)
+
+            _syncDeadlineMessage.SendClients(days);
+        }
+        catch (Exception ex)
+        {
+            Plugin.Log.LogError($"Could not sync deadline: {ex.Message}");
+        }
+    }
+
+    private static void OnDeadlineReceived(int days)
+    {
+        try
+        {
+            if (!ApplyDeadline(days) || Unity.Netcode.NetworkManager.Singleton.IsServer) return;
+
+            TimeOfDay.Instance.UpdateProfitQuotaCurrentTime();
+            TimeOfDayQuotaPatch.RefreshExternalMonitors();
+        }
+        catch (Exception ex)
+        {
+            Plugin.Log.LogError($"Could not apply synced deadline on client: {ex.Message}");
+        }
+    }
+
+    public static void SyncDeadlineLengthToClient(int days, ulong clientId)
+    {
+        try
+        {
+            if (_syncDeadlineLengthMessage == null)
             {
-                Plugin.Log.LogError($"Could not apply synced buying rate on client: {ex.Message}");
+                Plugin.Log.LogWarning("Deadline length message not initialized");
+                return;
             }
+
+            _syncDeadlineLengthMessage.SendClient(days, clientId);
         }
-
-        #endregion
-    }
-
-    [Serializable]
-    public struct SyncQuotaData
-    {
-        public int Quota;
-        public int PenaltyDelta;
-
-        public SyncQuotaData(int quota, int penaltyDelta)
+        catch (Exception ex)
         {
-            Quota = quota;
-            PenaltyDelta = penaltyDelta;
+            Plugin.Log.LogError($"Could not sync deadline length to client {clientId}: {ex.Message}");
         }
     }
 
-    [Serializable]
-    public struct RolloverStatusData
+    private static void OnDeadlineLengthReceived(int days)
     {
-        public int Bank;
-        public int Quota;
-        public int Deadline;
+        if (Unity.Netcode.NetworkManager.Singleton.IsServer) return;
 
-        public RolloverStatusData(int bank, int quota, int deadline)
+        TimeOfDay.Instance.quotaVariables.deadlineDaysAmount = Mathf.Max(1, days);
+    }
+
+    private static bool ApplyDeadline(int days)
+    {
+        var tod = TimeOfDay.Instance;
+        if (tod == null) return false;
+
+        int clampedDays = Mathf.Max(1, days);
+
+        float dayDuration = tod.totalTime;
+        if (dayDuration <= 0f && tod.daysUntilDeadline > 0 && tod.timeUntilDeadline > 0f)
+            dayDuration = tod.timeUntilDeadline / tod.daysUntilDeadline;
+
+        if (tod.quotaVariables != null)
+            tod.quotaVariables.deadlineDaysAmount = clampedDays;
+
+        tod.daysUntilDeadline = clampedDays;
+        if (dayDuration > 0f)
+            tod.timeUntilDeadline = clampedDays * dayDuration;
+
+        return true;
+    }
+
+    #endregion
+
+    #region Rollover Sync
+
+    public static void SyncRolloverToClients(int rollover)
+    {
+        try
         {
-            Bank = bank;
-            Quota = quota;
-            Deadline = deadline;
+            if (_syncRolloverMessage == null)
+            {
+                Plugin.Log.LogWarning("Rollover message not initialized");
+                return;
+            }
+
+            _syncRolloverMessage.SendClients(rollover);
+        }
+        catch (Exception ex)
+        {
+            Plugin.Log.LogError($"Could not sync rollover: {ex.Message}");
         }
     }
 
-    [Serializable]
-    public struct SyncBuyingRateData
+    public static void SyncRolloverToClient(int rollover, ulong clientId)
     {
-        public float Rate;
-        public bool IsJackpot;
-        public bool Silent;
-
-        public SyncBuyingRateData(float rate, bool isJackpot, bool silent = false)
+        try
         {
-            Rate = rate;
-            IsJackpot = isJackpot;
-            Silent = silent;
+            if (_syncRolloverMessage == null)
+            {
+                Plugin.Log.LogWarning("Rollover message not initialized");
+                return;
+            }
+
+            _syncRolloverMessage.SendClient(rollover, clientId);
+        }
+        catch (Exception ex)
+        {
+            Plugin.Log.LogError($"Could not sync rollover to client {clientId}: {ex.Message}");
         }
     }
 
-    [Serializable]
-    public struct SyncValueLossData
+    private static void OnRolloverReceived(int rollover)
     {
-        public ulong NetworkObjectId;
-        public int NewValue;
-
-        public SyncValueLossData(ulong networkObjectId, int newValue)
+        try
         {
-            NetworkObjectId = networkObjectId;
-            NewValue = newValue;
+            var tod = TimeOfDay.Instance;
+            if (tod != null)
+                tod.quotaFulfilled = Math.Max(0, rollover);
+        }
+        catch (Exception ex)
+        {
+            Plugin.Log.LogError($"Could not apply synced rollover on client: {ex.Message}");
         }
     }
 
-    [Serializable]
-    public struct SyncScrapLossSummary
+    public static void ReportRolloverStatus(int bank, int quota, int deadline)
     {
-        public int BeforeValue;
-        public int AfterValue;
+        ShowRolloverStatus(bank, quota, deadline);
 
-        public SyncScrapLossSummary(int beforeValue, int afterValue)
+        try
         {
-            BeforeValue = beforeValue;
-            AfterValue = afterValue;
+            if (_rolloverStatusMessage == null)
+            {
+                Plugin.Log.LogWarning("Rollover status message not initialized");
+                return;
+            }
+
+            _rolloverStatusMessage.SendClients(new RolloverStatusData(bank, quota, deadline));
         }
+        catch (Exception ex)
+        {
+            Plugin.Log.LogError($"Could not send the rollover status: {ex.Message}");
+        }
+    }
+
+    private static void OnRolloverStatusReceived(RolloverStatusData data)
+    {
+        if (Unity.Netcode.NetworkManager.Singleton.IsServer)
+            return;
+
+        ShowRolloverStatus(data.Bank, data.Quota, data.Deadline);
+    }
+
+    private static void ShowRolloverStatus(int bank, int quota, int deadline)
+    {
+        try
+        {
+            if (!ConfigManager.RolloverAlertEnabled.Value) return;
+
+            var hud = HUDManager.Instance;
+            hud.StartCoroutine(RolloverStatusRoutine(hud, bank, quota, deadline));
+        }
+        catch (Exception ex)
+        {
+            Plugin.Log.LogError($"Could not show the rollover status: {ex.Message}");
+        }
+    }
+
+    private static IEnumerator RolloverStatusRoutine(HUDManager hud, int bank, int quota, int deadline)
+    {
+        yield return new WaitForSecondsRealtime(1f);
+
+        float waited = 0f;
+        while (hud.displayingNewQuota && waited < 60f)
+        {
+            waited += Time.unscaledDeltaTime;
+            yield return null;
+        }
+
+        yield return new WaitForSecondsRealtime(1.5f);
+
+        string days = deadline == 1 ? "1 day" : $"{deadline} days";
+
+        hud.DisplayTip(
+            "<color=#ffc526>ROLLOVER SPENT</color>",
+            $"<color=#fcbf17>\n* Rollover only covers ${bank} of ${quota}, sell ${quota - bank} within {days}</color>",
+            true,
+            false,
+            "LC_RolloverTip"
+        );
+    }
+
+    #endregion
+
+    #region Buying Rate Sync
+
+    public static void SyncBuyingRateToClients(float rate, bool isJackpot, bool silent = false)
+    {
+        try
+        {
+            if (_syncBuyingRateMessage == null)
+            {
+                Plugin.Log.LogWarning("Buying rate message not initialized");
+                return;
+            }
+
+            _syncBuyingRateMessage.SendClients(new SyncBuyingRateData(rate, isJackpot, silent));
+        }
+        catch (Exception ex)
+        {
+            Plugin.Log.LogError($"Could not sync buying rate: {ex.Message}");
+        }
+    }
+
+    public static void SyncBuyingRateToClient(float rate, bool isJackpot, ulong clientId, bool silent = false)
+    {
+        try
+        {
+            if (_syncBuyingRateMessage == null)
+            {
+                Plugin.Log.LogWarning("Buying rate message not initialized");
+                return;
+            }
+
+            _syncBuyingRateMessage.SendClient(new SyncBuyingRateData(rate, isJackpot, silent), clientId);
+        }
+        catch (Exception ex)
+        {
+            Plugin.Log.LogError($"Could not sync buying rate to client {clientId}: {ex.Message}");
+        }
+    }
+
+    private static void OnBuyingRateReceived(SyncBuyingRateData data)
+    {
+        if (Unity.Netcode.NetworkManager.Singleton.IsServer)
+            return;
+
+        try
+        {
+            BuyingRatePatch.ApplyReceivedBuyingRate(data.Rate, data.IsJackpot, data.Silent);
+        }
+        catch (Exception ex)
+        {
+            Plugin.Log.LogError($"Could not apply synced buying rate on client: {ex.Message}");
+        }
+    }
+
+    #endregion
+}
+
+[Serializable]
+public struct SyncQuotaData
+{
+    public int Quota;
+    public int PenaltyDelta;
+
+    public SyncQuotaData(int quota, int penaltyDelta)
+    {
+        Quota = quota;
+        PenaltyDelta = penaltyDelta;
+    }
+}
+
+[Serializable]
+public struct RolloverStatusData
+{
+    public int Bank;
+    public int Quota;
+    public int Deadline;
+
+    public RolloverStatusData(int bank, int quota, int deadline)
+    {
+        Bank = bank;
+        Quota = quota;
+        Deadline = deadline;
+    }
+}
+
+[Serializable]
+public struct SyncBuyingRateData
+{
+    public float Rate;
+    public bool IsJackpot;
+    public bool Silent;
+
+    public SyncBuyingRateData(float rate, bool isJackpot, bool silent = false)
+    {
+        Rate = rate;
+        IsJackpot = isJackpot;
+        Silent = silent;
+    }
+}
+
+[Serializable]
+public struct SyncValueLossData
+{
+    public ulong NetworkObjectId;
+    public int NewValue;
+
+    public SyncValueLossData(ulong networkObjectId, int newValue)
+    {
+        NetworkObjectId = networkObjectId;
+        NewValue = newValue;
+    }
+}
+
+[Serializable]
+public struct SyncPenaltySummary
+{
+    public int Dead;
+    public int Total;
+    public int Recovered;
+    public bool CreditApplied;
+    public float CreditPercent;
+    public int CreditLoss;
+    public float QuotaPercent;
+    public int QuotaDelta;
+
+    public SyncPenaltySummary(int dead, int total, int recovered, bool creditApplied, float creditPercent, int creditLoss, float quotaPercent, int quotaDelta)
+    {
+        Dead = dead;
+        Total = total;
+        Recovered = recovered;
+        CreditApplied = creditApplied;
+        CreditPercent = creditPercent;
+        CreditLoss = creditLoss;
+        QuotaPercent = quotaPercent;
+        QuotaDelta = quotaDelta;
+    }
+}
+
+[Serializable]
+public struct SyncScrapLossSummary
+{
+    public int BeforeValue;
+    public int AfterValue;
+
+    public SyncScrapLossSummary(int beforeValue, int afterValue)
+    {
+        BeforeValue = beforeValue;
+        AfterValue = afterValue;
     }
 }

@@ -1,188 +1,267 @@
+using System;
 using HarmonyLib;
 using UnityEngine;
 
-namespace ConfigurableQuota.Patches
+namespace ConfigurableQuota.Patches;
+
+public enum PlayerScalingDirection
 {
-    public enum PlayerScalingDirection
+    PerMissingPlayer,
+    PerExtraPlayer
+}
+
+[HarmonyPatch(typeof(RoundManager))]
+internal static class DynamicLevelPatches
+{
+    private static int _savedMinScrap;
+    private static int _savedMaxScrap;
+    private static float _savedValueMultiplier;
+    private static bool _valueScaled;
+    private static SelectableLevel? _scrapLevel;
+
+    private static int _savedMaxEnemyPower;
+    private static int _savedMaxOutsidePower;
+    private static int _savedMaxDaytimePower;
+    private static SelectableLevel? _enemyPowerLevel;
+
+    internal static float InteriorScale = 1f;
+    private static SelectableLevel? _scaledLevel;
+    private static float _savedInteriorSize;
+
+    internal static float GetInteriorScale()
     {
-        PerMissingPlayer,
-        PerExtraPlayer
+        if (!ConfigManager.DynamicInteriorSizeEnabled.Value || ConfigManager.DisableQuota.Value) return 1f;
+        if (PenaltyHelpers.IsAtCompany()) return 1f;
+
+        float factor = GetPlayerFactor(
+            ConfigManager.DynamicInteriorSizePlayerThreshold.Value,
+            ConfigManager.DynamicInteriorSizeMultPerPlayer.Value,
+            ConfigManager.DynamicInteriorSizeDirection.Value);
+        return Mathf.Max(0.1f, ConfigManager.DynamicInteriorSizeBase.Value * factor);
     }
 
-    [HarmonyPatch(typeof(RoundManager))]
-    internal static class DynamicLevelPatches
+    [HarmonyPatch("GenerateNewFloor")]
+    [HarmonyPrefix]
+    [HarmonyAfter(new[] { ModGUIDs.LethalLevelLoader, ModGUIDs.LunarConfig })]
+    private static void GenerateNewFloor_Prefix(RoundManager __instance)
     {
-        private static int _savedMinScrapValue;
-        private static int _savedMaxScrapValue;
-        private static int _savedMinScrap;
-        private static int _savedMaxScrap;
+        RestoreInteriorSize();
 
-        private static int _savedMaxEnemyPower;
-        private static int _savedMaxOutsidePower;
-        private static int _savedMaxDaytimePower;
-        private static bool _enemyPowerSaved;
+        var level = __instance.currentLevel;
+        if (level == null || Mathf.Approximately(InteriorScale, 1f)) return;
 
-        [HarmonyPatch("GenerateNewFloor")]
-        [HarmonyPrefix]
-        [HarmonyAfter(new[] { ModGUIDs.LLL_GUID, ModGUIDs.LUNAR_CONFIG_GUID })]
-        private static void GenerateNewFloor_Prefix(RoundManager __instance)
+        _scaledLevel = level;
+        _savedInteriorSize = level.factorySizeMultiplier;
+        level.factorySizeMultiplier = _savedInteriorSize * InteriorScale;
+
+        if (PenaltyHelpers.IsServer)
+            Plugin.Log.LogInfo($"Interior size set to {level.factorySizeMultiplier:F2}, the moon's {_savedInteriorSize:F2} times {InteriorScale:F2} for {PenaltyHelpers.GetPlayerCount()} players.");
+    }
+
+    [HarmonyPatch("DespawnPropsAtEndOfRound")]
+    [HarmonyPostfix]
+    private static void RestoreInteriorOnRoundEnd()
+    {
+        RestoreInteriorSize();
+
+        if (!PenaltyHelpers.IsServer)
+            InteriorScale = 1f;
+    }
+
+    internal static void RestoreInteriorSize()
+    {
+        if (_scaledLevel == null) return;
+
+        _scaledLevel.factorySizeMultiplier = _savedInteriorSize;
+        _scaledLevel = null;
+    }
+
+    [HarmonyPatch("SpawnScrapInLevel")]
+    [HarmonyPrefix]
+    [HarmonyPriority(Priority.Last)]
+    [HarmonyAfter(new[] { ModGUIDs.LethalLevelLoader, ModGUIDs.LunarConfig, ModGUIDs.WeatherRegistry })]
+    private static void SpawnScrapInLevel_Prefix(RoundManager __instance)
+    {
+        RestoreScrapCounts();
+        if (!ShouldRunServer(__instance, out var level)) return;
+
+        _scrapLevel = level;
+        _savedMinScrap = level.minScrap;
+        _savedMaxScrap = level.maxScrap;
+        _savedValueMultiplier = __instance.scrapValueMultiplier;
+
+        if (ConfigManager.DynamicScrapValueEnabled.Value) ApplyScrapValue(__instance);
+        if (ConfigManager.DynamicScrapAmountEnabled.Value) ApplyScrapAmount(level);
+    }
+
+    [HarmonyPatch("SpawnScrapInLevel")]
+    [HarmonyFinalizer]
+    private static void SpawnScrapInLevel_Finalizer(RoundManager __instance)
+    {
+        if (_valueScaled)
+            __instance.scrapValueMultiplier = _savedValueMultiplier;
+
+        _valueScaled = false;
+        RestoreScrapCounts();
+    }
+
+    private static void RestoreScrapCounts()
+    {
+        if (_scrapLevel == null) return;
+
+        _scrapLevel.minScrap = _savedMinScrap;
+        _scrapLevel.maxScrap = _savedMaxScrap;
+        _scrapLevel = null;
+    }
+
+    [HarmonyPatch("GenerateNewFloor")]
+    [HarmonyPrefix]
+    [HarmonyAfter(new[] { ModGUIDs.LethalLevelLoader, ModGUIDs.LunarConfig })]
+    private static void EnemyPower_GenerateNewFloor_Prefix(RoundManager __instance)
+    {
+        RestoreEnemyPower();
+        if (!ShouldRunServer(__instance, out var level)) return;
+        if (!ConfigManager.DynamicEnemyPowerEnabled.Value) return;
+
+        _enemyPowerLevel = level;
+        _savedMaxEnemyPower = level.maxEnemyPowerCount;
+        _savedMaxOutsidePower = level.maxOutsideEnemyPowerCount;
+        _savedMaxDaytimePower = level.maxDaytimeEnemyPowerCount;
+
+        float factor = GetPlayerFactor(
+            ConfigManager.DynamicEnemyPowerPlayerThreshold.Value,
+            ConfigManager.DynamicEnemyPowerMultPerPlayer.Value,
+            PlayerScalingDirection.PerExtraPlayer);
+        factor = Mathf.Min(factor, Mathf.Max(1f, ConfigManager.DynamicEnemyPowerMaxFactor.Value));
+
+        if (ConfigManager.DynamicEnemyPowerScaleInside.Value)
+            level.maxEnemyPowerCount = Mathf.RoundToInt(_savedMaxEnemyPower * factor);
+        if (ConfigManager.DynamicEnemyPowerScaleOutside.Value)
+            level.maxOutsideEnemyPowerCount = Mathf.RoundToInt(_savedMaxOutsidePower * factor);
+        if (ConfigManager.DynamicEnemyPowerScaleDaytime.Value)
+            level.maxDaytimeEnemyPowerCount = Mathf.RoundToInt(_savedMaxDaytimePower * factor);
+
+        Plugin.Log.LogInfo(
+            $"Enemy power set for {PenaltyHelpers.GetPlayerCount()} players, factor {factor:F2}. " +
+            $"Inside {level.maxEnemyPowerCount}, outside {level.maxOutsideEnemyPowerCount}, daytime {level.maxDaytimeEnemyPowerCount}.");
+    }
+
+    [HarmonyPatch("DespawnPropsAtEndOfRound")]
+    [HarmonyPostfix]
+    private static void EnemyPower_RestoreOnRoundEnd()
+    {
+        RestoreEnemyPower();
+    }
+
+    internal static void RestoreEnemyPower()
+    {
+        if (_enemyPowerLevel == null) return;
+
+        _enemyPowerLevel.maxEnemyPowerCount = _savedMaxEnemyPower;
+        _enemyPowerLevel.maxOutsideEnemyPowerCount = _savedMaxOutsidePower;
+        _enemyPowerLevel.maxDaytimeEnemyPowerCount = _savedMaxDaytimePower;
+        _enemyPowerLevel = null;
+    }
+
+    private static bool ShouldRun(RoundManager rm, out SelectableLevel level)
+    {
+        level = rm.currentLevel;
+        if (level == null) return false;
+        if (ConfigManager.DisableQuota.Value) return false;
+        if (PenaltyHelpers.IsAtCompany()) return false;
+        return true;
+    }
+
+    private static bool ShouldRunServer(RoundManager rm, out SelectableLevel level)
+    {
+        if (!PenaltyHelpers.IsServer) { level = null!; return false; }
+        return ShouldRun(rm, out level);
+    }
+
+    private static float GetPlayerFactor(int threshold, float mult, PlayerScalingDirection direction)
+    {
+        int count = direction == PlayerScalingDirection.PerMissingPlayer
+            ? Mathf.Max(0, threshold - PenaltyHelpers.GetPlayerCount())
+            : Mathf.Max(0, PenaltyHelpers.GetPlayerCount() - threshold);
+        return 1f + (count * Mathf.Max(0f, mult));
+    }
+
+    private static void ApplyScrapValue(RoundManager rm)
+    {
+        float factor = GetPlayerFactor(
+            ConfigManager.DynamicScrapValuePlayerThreshold.Value,
+            ConfigManager.DynamicScrapValueMultPerPlayer.Value,
+            ConfigManager.DynamicScrapValueDirection.Value);
+
+        float low = ConfigManager.DynamicScrapValueMinMult.Value;
+        float high = Mathf.Max(low, ConfigManager.DynamicScrapValueMaxMult.Value);
+        var random = new System.Random(StartOfRound.Instance.randomMapSeed + 2718);
+        float extra = low + (float)random.NextDouble() * (high - low);
+
+        rm.scrapValueMultiplier = _savedValueMultiplier * factor * extra;
+        _valueScaled = true;
+        Plugin.Log.LogInfo($"Scrap value multiplier set to {rm.scrapValueMultiplier:F2}, the moon's {_savedValueMultiplier:F2} times {factor * extra:F2}.");
+    }
+
+    private static void ApplyScrapAmount(SelectableLevel level)
+    {
+        float factor = GetPlayerFactor(
+            ConfigManager.DynamicScrapAmountPlayerThreshold.Value,
+            ConfigManager.DynamicScrapAmountMultPerPlayer.Value,
+            ConfigManager.DynamicScrapAmountDirection.Value);
+
+        int minScrap = Mathf.Max(1, Mathf.RoundToInt(_savedMinScrap * factor));
+        int maxScrap = Mathf.Max(minScrap, Mathf.RoundToInt(_savedMaxScrap * factor));
+
+        int cap = ConfigManager.DynamicScrapAmountCap.Value;
+        if (cap >= 0)
         {
-            if (!ShouldRunServer(__instance, out var level)) return;
-            if (!ConfigManager.DynamicInteriorSizeEnabled.Value) return;
-
-            float factor = ComputePlayerFactor(
-                ConfigManager.DynamicInteriorSizePlayerThreshold.Value,
-                ConfigManager.DynamicInteriorSizeMultPerPlayer.Value,
-                ConfigManager.DynamicInteriorSizeDirection.Value);
-            float size = ConfigManager.DynamicInteriorSizeBase.Value * factor;
-            level.factorySizeMultiplier = size;
-            Plugin.Log.LogInfo($"Dynamic interior size - factorySizeMultiplier = {size:F2} (players={PenaltyHelpers.GetPlayerCount()}, factor={factor:F2}).");
+            maxScrap = Mathf.Min(maxScrap, cap);
+            minScrap = Mathf.Min(minScrap, maxScrap);
         }
 
-        [HarmonyPatch("SpawnScrapInLevel")]
-        [HarmonyPrefix]
-        [HarmonyAfter(new[] { ModGUIDs.LLL_GUID, ModGUIDs.LUNAR_CONFIG_GUID })]
-        private static void SpawnScrapInLevel_Prefix(RoundManager __instance)
+        level.minScrap = minScrap;
+        level.maxScrap = maxScrap;
+        Plugin.Log.LogInfo($"Scrap amount set to {minScrap} to {maxScrap} items from the moon's {_savedMinScrap} to {_savedMaxScrap}, factor {factor:F2}.");
+    }
+}
+
+[HarmonyPatch(typeof(StartOfRound))]
+internal static class InteriorScaleSyncPatch
+{
+    [HarmonyPatch("Start")]
+    [HarmonyPostfix]
+    private static void Start_Postfix()
+    {
+        DynamicLevelPatches.RestoreInteriorSize();
+        DynamicLevelPatches.RestoreEnemyPower();
+        DynamicLevelPatches.InteriorScale = 1f;
+    }
+
+    [HarmonyPatch(nameof(StartOfRound.OnDestroy))]
+    [HarmonyPostfix]
+    private static void OnDestroy_Postfix()
+    {
+        DynamicLevelPatches.RestoreInteriorSize();
+        DynamicLevelPatches.RestoreEnemyPower();
+    }
+
+    [HarmonyPatch(nameof(StartOfRound.StartGame))]
+    [HarmonyPrefix]
+    private static void StartGame_Prefix(StartOfRound __instance)
+    {
+        if (!__instance.IsServer || !__instance.inShipPhase) return;
+
+        try
         {
-            if (!ShouldRunServer(__instance, out var level)) return;
-            _savedMinScrapValue = level.minTotalScrapValue;
-            _savedMaxScrapValue = level.maxTotalScrapValue;
-            _savedMinScrap = level.minScrap;
-            _savedMaxScrap = level.maxScrap;
-            if (ConfigManager.DynamicScrapValueEnabled.Value) ApplyScrapValue(level);
-            if (ConfigManager.DynamicScrapAmountEnabled.Value) ApplyScrapAmount(level);
+            float scale = DynamicLevelPatches.GetInteriorScale();
+            DynamicLevelPatches.InteriorScale = scale;
+            NetworkSync.SyncInteriorScaleToClients(scale);
         }
-
-        [HarmonyPatch("SpawnScrapInLevel")]
-        [HarmonyPostfix]
-        private static void SpawnScrapInLevel_Postfix(RoundManager __instance)
+        catch (Exception e)
         {
-            if (!ShouldRunServer(__instance, out var level)) return;
-            level.minTotalScrapValue = _savedMinScrapValue;
-            level.maxTotalScrapValue = _savedMaxScrapValue;
-            level.minScrap = _savedMinScrap;
-            level.maxScrap = _savedMaxScrap;
-        }
-
-        [HarmonyPatch("GenerateNewFloor")]
-        [HarmonyPrefix]
-        [HarmonyAfter(new[] { ModGUIDs.LLL_GUID, ModGUIDs.LUNAR_CONFIG_GUID })]
-        private static void EnemyPower_GenerateNewFloor_Prefix(RoundManager __instance)
-        {
-            if (!ShouldRunServer(__instance, out var level)) return;
-            if (!ConfigManager.DynamicEnemyPowerEnabled.Value) return;
-
-            _savedMaxEnemyPower = level.maxEnemyPowerCount;
-            _savedMaxOutsidePower = level.maxOutsideEnemyPowerCount;
-            _savedMaxDaytimePower = level.maxDaytimeEnemyPowerCount;
-            _enemyPowerSaved = true;
-
-            float factor = ComputePlayerFactor(
-                ConfigManager.DynamicEnemyPowerPlayerThreshold.Value,
-                ConfigManager.DynamicEnemyPowerMultPerPlayer.Value,
-                PlayerScalingDirection.PerExtraPlayer);
-            factor = Mathf.Min(factor, Mathf.Max(1f, ConfigManager.DynamicEnemyPowerMaxFactor.Value));
-
-            if (ConfigManager.DynamicEnemyPowerScaleInside.Value)
-                level.maxEnemyPowerCount = Mathf.RoundToInt(_savedMaxEnemyPower * factor);
-            if (ConfigManager.DynamicEnemyPowerScaleOutside.Value)
-                level.maxOutsideEnemyPowerCount = Mathf.RoundToInt(_savedMaxOutsidePower * factor);
-            if (ConfigManager.DynamicEnemyPowerScaleDaytime.Value)
-                level.maxDaytimeEnemyPowerCount = Mathf.RoundToInt(_savedMaxDaytimePower * factor);
-
-            Plugin.Log.LogInfo(
-                $"Dynamic enemy power - factor={factor:F2} (players={PenaltyHelpers.GetPlayerCount()}), " +
-                $"inside={level.maxEnemyPowerCount}, outside={level.maxOutsideEnemyPowerCount}, daytime={level.maxDaytimeEnemyPowerCount}.");
-        }
-
-        [HarmonyPatch("DespawnPropsAtEndOfRound")]
-        [HarmonyPostfix]
-        private static void EnemyPower_RestoreOnRoundEnd(RoundManager __instance)
-        {
-            if (!_enemyPowerSaved) return;
-            var level = __instance?.currentLevel;
-            if (level != null)
-            {
-                level.maxEnemyPowerCount = _savedMaxEnemyPower;
-                level.maxOutsideEnemyPowerCount = _savedMaxOutsidePower;
-                level.maxDaytimeEnemyPowerCount = _savedMaxDaytimePower;
-            }
-            _enemyPowerSaved = false;
-        }
-
-        private static bool ShouldRun(RoundManager rm, out SelectableLevel level)
-        {
-            level = rm?.currentLevel!;
-            if (level == null) return false;
-            if (ConfigManager.DisableQuota.Value) return false;
-            if (PenaltyHelpers.IsAtCompany()) return false;
-            return true;
-        }
-
-        private static bool ShouldRunServer(RoundManager rm, out SelectableLevel level)
-        {
-            if (!PenaltyHelpers.IsServerSafe) { level = null!; return false; }
-            return ShouldRun(rm, out level);
-        }
-
-        private static float ComputePlayerFactor(int threshold, float mult, PlayerScalingDirection direction)
-        {
-            int count = direction == PlayerScalingDirection.PerMissingPlayer
-                ? Mathf.Max(0, threshold - PenaltyHelpers.GetPlayerCount())
-                : Mathf.Max(0, PenaltyHelpers.GetPlayerCount() - threshold);
-            return 1f + (count * Mathf.Max(0f, mult));
-        }
-
-        private static void ApplyScrapValue(SelectableLevel level)
-        {
-            int baseMin = Mathf.Max(1, _savedMinScrapValue);
-            int baseMax = Mathf.Max(baseMin, _savedMaxScrapValue);
-            float factor = ComputePlayerFactor(
-                ConfigManager.DynamicScrapValuePlayerThreshold.Value,
-                ConfigManager.DynamicScrapValueMultPerPlayer.Value,
-                ConfigManager.DynamicScrapValueDirection.Value);
-
-            int offset = ConfigManager.DynamicScrapValueOffset.Value;
-            int min = Mathf.RoundToInt(baseMin * ConfigManager.DynamicScrapValueMinMult.Value * factor) + offset;
-            int max = Mathf.RoundToInt(baseMax * ConfigManager.DynamicScrapValueMaxMult.Value * factor) + offset;
-
-            if (min < 1) min = 1;
-            if (max < 1) max = 1;
-            if (max < min) max = min;
-            level.minTotalScrapValue = min;
-            level.maxTotalScrapValue = max;
-            Plugin.Log.LogInfo($"Dynamic scrap value: factor={factor:F2}, base=${baseMin}/${baseMax}, min/max=${min}/${max}.");
-        }
-
-        private static void ApplyScrapAmount(SelectableLevel level)
-        {
-            float factor = ComputePlayerFactor(
-                ConfigManager.DynamicScrapAmountPlayerThreshold.Value,
-                ConfigManager.DynamicScrapAmountMultPerPlayer.Value,
-                ConfigManager.DynamicScrapAmountDirection.Value);
-
-            int baseMinTotalScrapValue = Mathf.Max(0, _savedMinScrapValue);
-            if (baseMinTotalScrapValue <= 0)
-            {
-                int baseMinScrap = Mathf.Max(0, _savedMinScrap);
-                int baseMaxScrap = Mathf.Max(baseMinScrap, _savedMaxScrap);
-                level.minScrap = baseMinScrap;
-                level.maxScrap = baseMaxScrap;
-                Plugin.Log.LogInfo(
-                    $"Dynamic scrap amount - factor={factor:F2}, baseline scrap value <= 0 so keeping base min/max items={baseMinScrap}/{baseMaxScrap}.");
-                return;
-            }
-
-            int divisor = Mathf.Max(1, ConfigManager.DynamicScrapAmountValuePerItem.Value);
-            int scaled = Mathf.RoundToInt(baseMinTotalScrapValue * factor);
-            int maxScrap = Mathf.Max(1, scaled / divisor);
-            int cap = ConfigManager.DynamicScrapAmountCap.Value;
-            if (cap >= 0) maxScrap = Mathf.Min(maxScrap, cap);
-            int minScrap = Mathf.Max(1, Mathf.RoundToInt(maxScrap * ConfigManager.DynamicScrapAmountMinFraction.Value));
-            if (minScrap > maxScrap) minScrap = maxScrap;
-            level.minScrap = minScrap;
-            level.maxScrap = maxScrap;
-            Plugin.Log.LogInfo($"Dynamic scrap amount - factor={factor:F2}, min/max items={minScrap}/{maxScrap}.");
+            DynamicLevelPatches.InteriorScale = 1f;
+            Plugin.Log.LogWarning($"Could not work out the interior size, using the normal size: {e.Message}");
         }
     }
 }
