@@ -1,7 +1,7 @@
-<div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 16px;">
-  <a href="https://www.codefactor.io/repository/github/se3ya/lc-configurablequota"><img src="https://img.shields.io/codefactor/grade/github/se3ya/LC-ConfigurableQuota?style=flat&logo=codefactor&logoColor=white&color=83E6FB&cacheSeconds=1200" alt="CodeFactor Grade"></a>
-  <a href="https://thunderstore.io/c/lethal-company/p/seechela/Configurable_Quota/"><img src="https://img.shields.io/thunderstore/dt/seechela/Configurable_Quota?style=flat&logo=thunderstore&logoColor=white&color=83E6FB&cacheSeconds=1200" alt="Thunderstore Downloads"></a>
-  <a href="https://github.com/se3ya/LC-ConfigurableQuota/releases"><img src="https://img.shields.io/github/v/release/se3ya/LC-ConfigurableQuota?style=flat&logo=github&logoColor=white&color=83E6FB&cacheSeconds=1200" alt="GitHub Release Version"></a>
+<div style="display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px;">
+  <img src="https://img.shields.io/codefactor/grade/github/se3ya/LC-ConfigurableQuota?style=flat&logo=codefactor&logoColor=white&color=83E6FB&cacheSeconds=1200" alt="CodeFactor Grade">
+  <img src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fthunderstore.io%2Fapi%2Fv1%2Fpackage-metrics%2Fseechela%2FConfigurable_Quota%2F&query=%24.downloads&label=downloads&style=flat&logo=thunderstore&logoColor=white&color=83E6FB&cacheSeconds=1200" alt="Thunderstore Downloads">
+  <img src="https://img.shields.io/github/v/release/se3ya/LC-ConfigurableQuota?style=flat&logo=github&logoColor=white&color=83E6FB&cacheSeconds=1200" alt="GitHub Release Version">
   <a href="https://discord.gg/Z9rUwTtUpx"><img src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fdiscordapp.com%2Fapi%2Finvites%2FZ9rUwTtUpx%3Fwith_counts%3Dtrue&query=approximate_member_count&style=flat&logo=discord&logoColor=white&color=83E6FB&cacheSeconds=1200&label=Discord" alt="Discord"></a>
   </div>
 <br><br>
@@ -30,13 +30,14 @@
 - Configure dynamic scrap value with player-count scaling (solo or full lobby can be boosted)
 - Configure dynamic scrap item count with player-count scaling
 - Configure dynamic enemy power that scales with player count
+- Configure bee hive values by distance from ship
 - Configure new quota animation speed
 - Disable quota entirely, deadline monitor then reads NEVER
-- __LethalConstellations__ compatibility with per-constellation deadline modes _[ fixed, random or use global ]_
+- **LethalConstellations** compatibility with per-constellation deadline modes *[ fixed, random or use global ]*
 
 ---
 
-## Configuration Options
+## Configuration
 
 ### **0. Basic**
 
@@ -254,10 +255,10 @@ expected losses ≈ 6 * 0.05 = 0.3 items per wipe (capped at 1)
 
 ### **A. Dynamic.Interior.Size**
 
-Scales the moons interior multiplier by player count.
+Scales moons interior by player count
 
 - **Enabled** - Resize the moons interior by lobby size. Skipped at company moons
-- **BaseSize** - Starting multiplier applied before the player factor
+- **BaseSize** - Multiplier on moons own size at the threshold
 - **PlayerThreshold** - Player count where scaling kicks in
 - **ScalingDirection** - `PerMissingPlayer` (boost when below threshold) or `PerExtraPlayer` (boost when above threshold)
 - **MultPerPlayer** - Multiplier added per player
@@ -268,25 +269,24 @@ Scales the moons interior multiplier by player count.
 count  = PerMissingPlayer ? max(0, PlayerThreshold - playerCount)
                           : max(0, playerCount - PlayerThreshold)
 factor = 1 + count * MultPerPlayer
-size   = BaseSize * factor
+size   = moon size * BaseSize * factor
 ```
 
 **Example** (`PerExtraPlayer`, `PlayerThreshold=2`, `MultPerPlayer=0.10`, `BaseSize=1.0`):
 
-| Players | count | factor | size |
-|---:|---:|---:|---:|
-| 1 | 0 | 1.00 | 1.00 |
-| 2 | 0 | 1.00 | 1.00 |
-| 3 | 1 | 1.10 | 1.10 |
-| 4 | 2 | 1.20 | 1.20 |
+| Players | count | factor | Experimentation (1.0) | Titan (2.2) |
+|---:|---:|---:|---:|---:|
+| 1 | 0 | 1.00 | 1.00 | 2.20 |
+| 2 | 0 | 1.00 | 1.00 | 2.20 |
+| 3 | 1 | 1.10 | 1.10 | 2.42 |
+| 4 | 2 | 1.20 | 1.20 | 2.64 |
 
 ### **B. Dynamic.Scrap.Value**
 
-Scales the moons min/max total scrap value with a player count factor.
+Multiplies value of every scrap moon spawns by player count factor
 
-- **Enabled** - Scale min/max scrap value by player count. Skipped at company moons
-- **ScrapValueOffset** - Flat credits added to both min and max after scaling
-- **MinValueMultiplier / MaxValueMultiplier** - Extra scale applied to the moons min/max values
+- **Enabled** - Scale scrap value by player count. Skipped at company moons
+- **MinValueMultiplier / MaxValueMultiplier** - Extra multiplier rolled once per landing
 - **PlayerThreshold** - Player count where scaling kicks in
 - **ScalingDirection** - `PerMissingPlayer` (boost when below threshold) or `PerExtraPlayer` (boost when above threshold)
 - **MultPerPlayer** - Multiplier added per player
@@ -297,25 +297,23 @@ Scales the moons min/max total scrap value with a player count factor.
 count  = PerMissingPlayer ? max(0, PlayerThreshold - playerCount)
                           : max(0, playerCount - PlayerThreshold)
 factor = 1 + count * MultPerPlayer
-min    = round(baseMinTotalScrapValue * MinValueMultiplier * factor) + ScrapValueOffset
-max    = round(baseMaxTotalScrapValue * MaxValueMultiplier * factor) + ScrapValueOffset
+extra  = random between MinValueMultiplier and MaxValueMultiplier
+value  = item value * factor * extra
 ```
 
-**Solo boost example** (`PerMissingPlayer`, `PlayerThreshold=2`, `MultPerPlayer=0.15`, `MinMult=1.0`, `MaxMult=1.0`, `Offset=0`):
+**Solo boost example** (`PerMissingPlayer`, `PlayerThreshold=2`, `MultPerPlayer=0.15`, `MinMult=1.0`, `MaxMult=1.0`):
 
-| Players | factor | base min/max | scaled min/max |
-|---:|---:|---:|---:|
-| 1 (solo) | 1.15 | $1200 / $1800 | $1380 / $2070 |
-| 2+ | 1.00 | $1200 / $1800 | $1200 / $1800 |
+| Players | factor | $80 item becomes |
+|---:|---:|---:|
+| 1 (solo) | 1.15 | $92 |
+| 2+ | 1.00 | $80 |
 
 ### **C. Dynamic.Scrap.Amount**
 
-Scales the moons min/max scrap item count off baseMinTotalScrapValue, with a player count factor.
+Multiplies moons own min and max scrap count by player count factor
 
-- **Enabled** - Scale min/max scrap item count by player count. Skipped at company moons
-- **ValuePerScrapItem** - Divisor on the scaled value: lower = more items per moon
-- **MinScrapFraction** - `minScrap = round(maxScrap * this)`
-- **MaxScrapItemsCap** - Hard ceiling on `maxScrap`. `-1` disables the cap
+- **Enabled** - Scale the moon's scrap count by player count. Skipped at company moons
+- **MaxScrapItemsCap** - Most items a moon can roll after scaling. `-1` disables the cap
 - **PlayerThreshold** - Player count where scaling kicks in
 - **ScalingDirection** - `PerMissingPlayer` (boost when below threshold) or `PerExtraPlayer` (boost when above threshold)
 - **MultPerPlayer** - Multiplier added per player
@@ -326,27 +324,17 @@ Scales the moons min/max scrap item count off baseMinTotalScrapValue, with a pla
 count    = PerMissingPlayer ? max(0, PlayerThreshold - playerCount)
                             : max(0, playerCount - PlayerThreshold)
 factor   = 1 + count * MultPerPlayer
-maxScrap = max(1, round(baseMinTotalScrapValue * factor) / ValuePerScrapItem)
-if cap >= 0: maxScrap = min(maxScrap, MaxScrapItemsCap)
-minScrap = max(1, round(maxScrap * MinScrapFraction))
+minScrap = max(1, round(moon minScrap * factor))
+maxScrap = round(moon maxScrap * factor)
+if cap >= 0: maxScrap = min(maxScrap, MaxScrapItemsCap), minScrap = min(minScrap, maxScrap)
 ```
 
-**Solo boost example** (defaults: `PerMissingPlayer`, `PlayerThreshold=2`, `MultPerPlayer=0.15`, `Divisor=25`, `Fraction=0.6`):
+**Solo boost example** (`PerMissingPlayer`, `PlayerThreshold=2`, `MultPerPlayer=0.15`, no cap):
 
-| baseMinTotalScrapValue | Players | factor | maxScrap | minScrap |
-|---:|---:|---:|---:|---:|
-| $200 | 1 (solo) | 1.15 | 9 | 5 |
-| $200 | 2+ | 1.00 | 8 | 5 |
-| $1,000 | 1 | 1.15 | 46 | 28 |
-| $1,000 | 4 | 1.00 | 40 | 24 |
-
-**Tighter cap** (`MaxScrapItemsCap=15`):
-
-| baseMinTotalScrapValue | Raw maxScrap | Capped | minScrap |
-|---:|---:|---:|---:|
-| $500 | 20 | 15 | 9 |
-| $1,000 | 40 | 15 | 9 |
-| $2,000 | 80 | 15 | 9 |
+| Moon | Vanilla | 1 player (1.15) | 2+ players |
+|---|---:|---:|---:|
+| Experimentation | 8-12 | 9-14 | 8-12 |
+| Titan | 28-32 | 32-37 | 28-32 |
 
 ### **D. Dynamic.Enemy.Power**
 
@@ -385,6 +373,13 @@ maxDaytimeEnemyPowerCount *= factor   (if ScaleDaytime)
 - **Forced Company Moons** - Comma separated moon names always treated as company moon. Matches 71 Gordion or just Gordion
 - **Excluded Company Moons** - Comma separated moon names never treated as company moon. Wins over Forced Company Moons
 - **Apply Losses On Company Moons** - Run loss settings at company moon. Off, the game destroys all collected scrap
+
+### **F. Bee.Hive**
+
+- **Enabled** - Roll hive values from ranges below instead of vanilla
+- **DistanceThreshold** - Hives closer to ship than this use Near range
+- **NearMinValue / NearMaxValue** - Value range near ship
+- **FarMinValue / FarMaxValue** - Value range further out
 
 ### **X. Buy.Rate**
 
